@@ -24,6 +24,13 @@ def _quantiles(values: np.ndarray) -> dict[str, float]:
     }
 
 
+def _coordinate_quantiles(points: np.ndarray) -> dict[str, dict[str, float]]:
+    return {
+        axis: _quantiles(points[:, index])
+        for index, axis in enumerate(("x", "y", "z"))
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Read-only geometry diagnostics for a planned scene class."
@@ -53,6 +60,13 @@ def main() -> None:
     object_votes = np.load(fused / f"{args.class_id}-votes.npy")
     plant_votes = np.load(fused / f"{args.class_id}-plant-votes.npy")
     seed_mask = (object_votes >= 1) & (object_votes > plant_votes)
+    manual_path = fused / f"{args.class_id}-manual-seed-mask.npy"
+    manual_mask = (
+        np.asarray(np.load(manual_path), dtype=bool)
+        if manual_path.is_file()
+        else np.zeros(len(cloud), dtype=bool)
+    )
+    seed_mask |= manual_mask
     seed_points = coordinates[seed_mask]
     if len(seed_points) < 3:
         raise ValueError("fewer than three class-exclusive evidence points")
@@ -93,6 +107,16 @@ def main() -> None:
     normalized[valid_normals] /= lengths[valid_normals, None]
     alignment = np.abs(normalized @ normal)
     excess_green = 2.0 * rgb[:, 1] - rgb[:, 0] - rgb[:, 2]
+    saturation = (rgb.max(axis=1) - rgb.min(axis=1)) / np.maximum(
+        rgb.max(axis=1),
+        1.0,
+    )
+    structural_seed_mask = (
+        seed_mask
+        & (excess_green <= 5.0)
+        & (saturation <= 0.55)
+    )
+    structural_seed_points = coordinates[structural_seed_mask]
 
     report = {
         "schema_version": 1,
@@ -100,6 +124,12 @@ def main() -> None:
         "class_id": args.class_id,
         "source_point_count": len(cloud),
         "seed_point_count": int(seed_mask.sum()),
+        "manual_seed_point_count": int(manual_mask.sum()),
+        "seed_coordinate_quantiles": _coordinate_quantiles(seed_points),
+        "structural_seed_point_count": int(structural_seed_mask.sum()),
+        "structural_seed_coordinate_quantiles": _coordinate_quantiles(
+            structural_seed_points
+        ),
         "fit_point_count": len(fit_points),
         "plane_center": center.tolist(),
         "plane_normal": normal.tolist(),
