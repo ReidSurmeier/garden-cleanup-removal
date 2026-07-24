@@ -37,7 +37,7 @@ def build_correction_manifest(
     if not isinstance(results, list):
         raise ValueError("baseline report requires results")
 
-    corrections: list[dict[str, str]] = []
+    corrections: list[dict[str, Any]] = []
     for result in results:
         if not isinstance(result, dict) or result.get("status") == "complete":
             continue
@@ -52,6 +52,7 @@ def build_correction_manifest(
                 "scan_id": scan_id,
                 "source": str(source["source"]),
                 "config": str(source["config"]),
+                "review_artifacts": False,
             }
         )
     if not corrections:

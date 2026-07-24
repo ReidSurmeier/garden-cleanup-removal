@@ -36,6 +36,9 @@ def load_batch_manifest(path: Path) -> list[dict[str, Any]]:
             if plan_value is not None
             else None
         )
+        review_artifacts = item.get("review_artifacts", True)
+        if not isinstance(review_artifacts, bool):
+            raise ValueError("review_artifacts must be a boolean")
         if not source.is_file():
             raise FileNotFoundError(source)
         if not config.is_file():
@@ -48,6 +51,7 @@ def load_batch_manifest(path: Path) -> list[dict[str, Any]]:
                 "source": source,
                 "config": config,
                 "scene_plan": scene_plan,
+                "review_artifacts": review_artifacts,
             }
         )
     return result
@@ -119,6 +123,7 @@ def run_batch(
                 clipseg_predictor=clipseg_predictor,
                 sam2_predictor=sam2_predictor,
                 dense_predictor=dense_predictor,
+                build_review_artifacts=item["review_artifacts"],
                 progress=lambda stage, prefix=scan_id: progress(
                     f"[{prefix}] {stage}"
                 ),

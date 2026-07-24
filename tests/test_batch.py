@@ -127,3 +127,69 @@ def test_batch_flags_partial_directory_without_overwriting_it(
         "failed": 0,
     }
     assert marker.read_text(encoding="utf-8") == "source evidence\n"
+
+
+def test_batch_can_skip_redundant_intermediate_review_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.ply"
+    config = tmp_path / "config.json"
+    source.write_bytes(b"ply")
+    config.write_text(
+        json.dumps(
+            {
+                "vision": {
+                    "clipseg_model": "clipseg",
+                    "sam2_model": "sam2",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "batch.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scans": [
+                    {
+                        "scan_id": "correction",
+                        "source": str(source),
+                        "config": str(config),
+                        "review_artifacts": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, bool] = {}
+
+    def fake_cleanup(
+        source_path: Path,
+        output_dir: Path,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["build_review_artifacts"] = bool(
+            kwargs["build_review_artifacts"]
+        )
+        return {"counts": {"plant_cleaned": 1}}
+
+    monkeypatch.setattr(
+        "railing_removal.batch.HuggingFaceClipSegPredictor",
+        lambda _: object(),
+    )
+    monkeypatch.setattr(
+        "railing_removal.batch.HuggingFaceSam2Predictor",
+        lambda _: object(),
+    )
+    monkeypatch.setattr(
+        "railing_removal.batch.run_full_cleanup",
+        fake_cleanup,
+    )
+
+    report = run_batch(manifest, tmp_path / "output")
+
+    assert captured == {"build_review_artifacts": False}
+    assert report["summary"]["complete"] == 1

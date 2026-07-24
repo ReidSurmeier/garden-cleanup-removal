@@ -130,6 +130,7 @@ def run_full_cleanup(
     clipseg_predictor: Any | None = None,
     sam2_predictor: Any | None = None,
     dense_predictor: Any | None = None,
+    build_review_artifacts: bool = True,
     progress: Progress | None = None,
 ) -> dict[str, Any]:
     """Run the complete approved geometry, vision, floor, and railing pipeline."""
@@ -487,31 +488,39 @@ def run_full_cleanup(
     )
     _write_json(final_dir / "color-report.json", color_report)
 
-    progress("proof-renders")
-    for name, path in (
-        ("source", source_path),
-        ("plant", plant_path),
-        ("conservative", conservative_path),
-        ("rejected", rejected_path),
-    ):
-        proof = render_cloud_views(
-            path,
-            final_dir / f"render-{name}",
-            size=config["proof_render_size"],
-            point_radius=1,
-        )
-        _write_json(final_dir / f"render-{name}" / "render-report.json", proof)
+    if build_review_artifacts:
+        progress("proof-renders")
+        for name, path in (
+            ("source", source_path),
+            ("plant", plant_path),
+            ("conservative", conservative_path),
+            ("rejected", rejected_path),
+        ):
+            proof = render_cloud_views(
+                path,
+                final_dir / f"render-{name}",
+                size=config["proof_render_size"],
+                point_radius=1,
+            )
+            _write_json(
+                final_dir / f"render-{name}" / "render-report.json",
+                proof,
+            )
 
-    progress("web-viewer")
-    viewer_manifest = _build_viewer(
-        source=source_path,
-        previous=floor_plant,
-        plant=plant_path,
-        conservative=conservative_path,
-        rejected=rejected_path,
-        uncertain=semantic_dir / "uncertain-semantic.ply",
-        output=output_dir / "review",
-    )
+        progress("web-viewer")
+        viewer_manifest = _build_viewer(
+            source=source_path,
+            previous=floor_plant,
+            plant=plant_path,
+            conservative=conservative_path,
+            rejected=rejected_path,
+            uncertain=semantic_dir / "uncertain-semantic.ply",
+            output=output_dir / "review",
+        )
+    else:
+        progress("proof-renders-skipped")
+        progress("web-viewer-skipped")
+        viewer_manifest = {"layers": {}}
 
     report = {
         "schema_version": 1,
@@ -563,7 +572,11 @@ def run_full_cleanup(
             "plant_conservative": str(conservative_path),
             "plant_color_corrected": str(color_path),
             "rejected": str(rejected_path),
-            "viewer": str(output_dir / "review" / "viewer.html"),
+            "viewer": (
+                str(output_dir / "review" / "viewer.html")
+                if build_review_artifacts
+                else None
+            ),
         },
     }
     _write_json(output_dir / "run-report.json", report)
