@@ -59,11 +59,13 @@ def main() -> None:
         plant_votes=generic_plant,
         background_votes=generic_background,
     )
+    source_plant = np.load(source_photo_dir / "plant-votes.npy")
+    source_background = np.load(
+        source_photo_dir / "background-votes.npy"
+    )
     plant_votes, background_votes, source_seen = fuse_source_photo_votes(
-        source_plant=np.load(source_photo_dir / "plant-votes.npy"),
-        source_background=np.load(
-            source_photo_dir / "background-votes.npy"
-        ),
+        source_plant=source_plant,
+        source_background=source_background,
         fallback_plant=np.load(
             scan_dir / "dense-semantic" / "plant-votes.npy"
         ),
@@ -97,6 +99,22 @@ def main() -> None:
         decisions,
     )
     write_decision_cloud(cloud, rejected_path, ~strict, decisions)
+    observed_plant = source_plant > source_background
+    observed_background = source_background > source_plant
+    diagnostic_layers = (
+        ("source-photo-plant", observed_plant),
+        ("source-photo-background", observed_background),
+        ("source-photo-unseen", ~source_seen),
+    )
+    for layer, mask in diagnostic_layers:
+        path = output_dir / f"{layer}.ply"
+        write_decision_cloud(cloud, path, mask, decisions)
+        render_cloud_views(
+            path,
+            output_dir / f"render-{layer}",
+            size=int(config["proof_render_size"]),
+            point_radius=1,
+        )
     for layer, path in (
         ("source", source_path),
         ("plant", strict_path),
@@ -118,6 +136,10 @@ def main() -> None:
         "source_photo_dir": str(source_photo_dir),
         "source_point_count": int(len(cloud)),
         "source_photo_seen_point_count": int(source_seen.sum()),
+        "source_photo_plant_point_count": int(observed_plant.sum()),
+        "source_photo_background_point_count": int(
+            observed_background.sum()
+        ),
         "floor": floor_report,
         "propagation": propagation,
         "counts": {
