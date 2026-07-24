@@ -53,6 +53,10 @@
       "status": "no_coherent_reconstruction",
       "evidence": "Reference video shows mixed shrubs, but the point cloud contains only a tiny disconnected cluster and line."
     },
+    "2026-07-17 12.17.25": {
+      "status": "manual_cleanup_required",
+      "evidence": "Plants reconstruct coherently, but a pavilion remains interleaved with them after source-verified line and component cleanup; publish the proof for manual approval instead of mislabeling the scan clean."
+    },
     "2026-07-17 13.28.02": {
       "status": "no_coherent_reconstruction",
       "evidence": "Reference video shows a planted bed, but the point cloud is an almost empty horizontal line."

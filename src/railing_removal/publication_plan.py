@@ -109,14 +109,16 @@ def build_publication_plan(
         elif status in {
             "no_plant_candidate",
             "no_coherent_reconstruction",
+            "manual_cleanup_required",
         }:
-            plan_scans.append(
-                {
-                    "scan_id": scan_id,
-                    "action": "publish_flag",
-                    "reason": evidence,
-                }
-            )
+            flag = {
+                "scan_id": scan_id,
+                "action": "publish_flag",
+                "reason": evidence,
+            }
+            if status == "manual_cleanup_required":
+                flag["flag_status"] = status
+            plan_scans.append(flag)
         else:
             raise ValueError(
                 f"unresolved reference triage status for {scan_id}: {status}"

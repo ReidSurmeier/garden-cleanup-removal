@@ -180,6 +180,9 @@ def publish_outputs(
             {
                 "scan_id": scan_id,
                 "action": action,
+                "flag_status": str(
+                    item.get("flag_status", "no_coherent_plant")
+                ).strip(),
                 "reason": str(item.get("reason", "")).strip() or None,
                 "sources": sources,
                 "destinations": destinations,
@@ -201,7 +204,7 @@ def publish_outputs(
                 {
                     "schema_version": 1,
                     "scan_id": item["scan_id"],
-                    "status": "no_coherent_plant",
+                    "status": item["flag_status"],
                     "reason": item["reason"],
                     "artifact_tag": artifact_tag,
                     "batch_report": str(batch_report_path.resolve()),
