@@ -19,7 +19,7 @@
       "decision_policy": "class_exclusive_background",
       "background_depth_fraction": 0.006,
       "background_anchor_limit": 12,
-      "completion_strategy": "rigid_lines",
+      "completion_strategy": "rigid_surface",
       "required_segmented_views": 1
     },
     "living_wall_frame": {

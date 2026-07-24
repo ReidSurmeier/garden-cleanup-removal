@@ -71,8 +71,11 @@ def run_source_photo_cleanup(
     rgb = np.column_stack(
         (cloud["red"], cloud["green"], cloud["blue"])
     )
+    final_decisions = baseline_scan_dir / "final" / "decision-codes.npy"
     decisions = np.load(
-        baseline_scan_dir / "semantic" / "decision-codes.npy"
+        final_decisions
+        if final_decisions.is_file()
+        else baseline_scan_dir / "semantic" / "decision-codes.npy"
     )
     generic_plant = np.load(
         baseline_scan_dir / "vision-sam2" / "plant-votes.npy"

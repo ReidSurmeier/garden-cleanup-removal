@@ -3,7 +3,11 @@ from __future__ import annotations
 import numpy as np
 
 from railing_removal import LineCompletionParameters, complete_railing_lines
-from railing_removal.completion import complete_rigid_line_classes
+from railing_removal.completion import (
+    RigidSurfaceCompletionParameters,
+    complete_rigid_line_classes,
+    complete_rigid_surface_classes,
+)
 
 
 def test_user_can_complete_an_occluded_rail_from_sparse_semantic_seeds() -> None:
@@ -178,3 +182,50 @@ def test_rejected_fence_evidence_can_complete_remaining_candidate_points() -> No
         evidence_mask.sum()
     )
     assert report["completed_point_count"] == int(candidate_mask.sum())
+
+
+def test_rejected_fence_evidence_completes_a_slatted_surface_safely() -> None:
+    fence = np.array(
+        [
+            (x, 0.0, z)
+            for x in np.linspace(-5.0, 5.0, 41)
+            for z in np.linspace(0.0, 3.0, 21)
+        ],
+        dtype=np.float64,
+    )
+    protected_plant = np.array(
+        [(x, 0.02, 1.5) for x in np.linspace(-0.5, 0.5, 9)],
+        dtype=np.float64,
+    )
+    detached_plant = np.array([(0.0, 2.0, 1.5)], dtype=np.float64)
+    coordinates = np.vstack((fence, protected_plant, detached_plant))
+    rgb = np.full((len(coordinates), 3), 90, dtype=np.uint8)
+    rgb[len(fence) :] = (35, 160, 30)
+    evidence_mask = np.zeros(len(coordinates), dtype=bool)
+    evidence_mask[: len(fence) : 4] = True
+    fence_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    fence_votes[evidence_mask] = 2
+    plant_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    plant_votes[len(fence) :] = 5
+    candidate_mask = ~evidence_mask
+
+    rejected, report = complete_rigid_surface_classes(
+        coordinates,
+        rgb=rgb,
+        candidate_mask=candidate_mask,
+        seed_mask=evidence_mask,
+        class_votes={"fence": fence_votes},
+        class_plant_votes={"fence": plant_votes},
+        parameters=RigidSurfaceCompletionParameters(
+            minimum_surface_seed_points=20,
+            minimum_surface_span=1.0,
+            plane_distance=0.08,
+        ),
+    )
+
+    assert rejected[: len(fence)][candidate_mask[: len(fence)]].all()
+    assert not rejected[len(fence) :].any()
+    assert report["classes"]["fence"]["accepted_surface_count"] == 1
+    assert report["completed_point_count"] == int(
+        candidate_mask[: len(fence)].sum()
+    )

@@ -42,7 +42,10 @@ from plant_cleanup.sam2_votes import (
 from plant_cleanup.scene_evidence import run_scene_evidence
 from plant_cleanup.semantic_refine import SemanticParameters, refine_with_semantics
 from plant_cleanup.web_preview import export_web_preview
-from railing_removal.completion import complete_rigid_line_classes
+from railing_removal.completion import (
+    complete_rigid_line_classes,
+    complete_rigid_surface_classes,
+)
 from railing_removal.floor import remove_uncertain_floor
 
 
@@ -412,8 +415,17 @@ def run_full_cleanup(
         if class_id == "railing"
         or object_class.get("completion_strategy") == "rigid_lines"
     }
-    if rigid_line_classes:
-        progress("rigid-line-semantic-evidence")
+    rigid_surface_classes = {
+        class_id: object_class
+        for class_id, object_class in plan_classes.items()
+        if object_class.get("completion_strategy") == "rigid_surface"
+    }
+    rigid_completion_classes = {
+        **rigid_line_classes,
+        **rigid_surface_classes,
+    }
+    if rigid_completion_classes:
+        progress("rigid-object-semantic-evidence")
         if scene_evidence is None:
             scene_values = config.get("scene_evidence", {})
             scene_evidence = output_dir / "scene-evidence"
@@ -445,24 +457,62 @@ def run_full_cleanup(
                     scene_values.get("prompt_grid", [3, 6])
                 ),
             )
-        progress("rigid-line-completion")
         fused = scene_evidence / "fused"
-        railing_reject, completion_report = complete_rigid_line_classes(
-            coordinates,
-            rgb=rgb,
-            candidate_mask=floor_keep,
-            seed_mask=semantic_decisions == 4,
-            class_votes={
-                class_id: np.load(fused / f"{class_id}-votes.npy")
-                for class_id in rigid_line_classes
-            },
-            class_plant_votes={
-                class_id: np.load(
-                    fused / f"{class_id}-plant-votes.npy"
-                )
-                for class_id in rigid_line_classes
-            },
-        )
+        evidence_mask = semantic_decisions == 4
+        railing_reject = np.zeros(len(cloud), dtype=bool)
+        line_report: dict[str, Any] = {
+            "status": "skipped",
+            "completed_point_count": 0,
+        }
+        surface_report: dict[str, Any] = {
+            "status": "skipped",
+            "completed_point_count": 0,
+        }
+        if rigid_line_classes:
+            progress("rigid-line-completion")
+            line_reject, line_report = complete_rigid_line_classes(
+                coordinates,
+                rgb=rgb,
+                candidate_mask=floor_keep,
+                seed_mask=evidence_mask,
+                class_votes={
+                    class_id: np.load(fused / f"{class_id}-votes.npy")
+                    for class_id in rigid_line_classes
+                },
+                class_plant_votes={
+                    class_id: np.load(
+                        fused / f"{class_id}-plant-votes.npy"
+                    )
+                    for class_id in rigid_line_classes
+                },
+            )
+            railing_reject |= line_reject
+        if rigid_surface_classes:
+            progress("rigid-surface-completion")
+            surface_reject, surface_report = complete_rigid_surface_classes(
+                coordinates,
+                rgb=rgb,
+                candidate_mask=floor_keep,
+                seed_mask=evidence_mask,
+                class_votes={
+                    class_id: np.load(fused / f"{class_id}-votes.npy")
+                    for class_id in rigid_surface_classes
+                },
+                class_plant_votes={
+                    class_id: np.load(
+                        fused / f"{class_id}-plant-votes.npy"
+                    )
+                    for class_id in rigid_surface_classes
+                },
+            )
+            railing_reject |= surface_reject
+        completion_report = {
+            "schema_version": 2,
+            "strategy": "planned-rigid-geometry-completion-v2",
+            "completed_point_count": int(railing_reject.sum()),
+            "line_completion": line_report,
+            "surface_completion": surface_report,
+        }
     else:
         progress("railing-stage-skipped")
         railing_reject = np.zeros(len(cloud), dtype=bool)
@@ -474,24 +524,27 @@ def run_full_cleanup(
             "reason": (
                 "no scene plan supplied"
                 if plan is None
-                else "scene plan contains no rigid-line class"
+                else "scene plan contains no rigid completion class"
             ),
         }
     final_keep = strict_keep & ~railing_reject
     final_conservative_keep = conservative_keep & ~railing_reject
     final_dir = output_dir / "final"
     final_dir.mkdir()
+    final_decisions = semantic_decisions.copy()
+    final_decisions[railing_reject] = 4
+    np.save(final_dir / "decision-codes.npy", final_decisions)
     plant_path = final_dir / "plant-cleaned.ply"
     conservative_path = final_dir / "plant-cleaned-conservative.ply"
     rejected_path = final_dir / "rejected-cleaned.ply"
-    write_decision_cloud(cloud, plant_path, final_keep, semantic_decisions)
+    write_decision_cloud(cloud, plant_path, final_keep, final_decisions)
     write_decision_cloud(
         cloud,
         conservative_path,
         final_conservative_keep,
-        semantic_decisions,
+        final_decisions,
     )
-    write_decision_cloud(cloud, rejected_path, ~final_keep, semantic_decisions)
+    write_decision_cloud(cloud, rejected_path, ~final_keep, final_decisions)
     _write_json(final_dir / "railing-completion-report.json", completion_report)
 
     progress("color-correction")

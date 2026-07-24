@@ -67,6 +67,10 @@ def test_source_photo_cleanup_writes_publishable_additive_artifacts(
             np.array([1, 2, 3], dtype=np.uint8),
         ),
         (
+            baseline / "final" / "decision-codes.npy",
+            np.array([1, 4, 3], dtype=np.uint8),
+        ),
+        (
             baseline / "vision-sam2" / "plant-votes.npy",
             np.array([1, 1, 1], dtype=np.uint8),
         ),
@@ -99,13 +103,16 @@ def test_source_photo_cleanup_writes_publishable_additive_artifacts(
 
     module = "plant_cleanup.source_photo_cleanup"
     monkeypatch.setattr(f"{module}.read_cloud", lambda path: cloud)
-    monkeypatch.setattr(
-        f"{module}.remove_uncertain_floor",
-        lambda *args, **kwargs: (
+    observed_decisions: list[np.ndarray] = []
+
+    def remove_floor(*args: object, **kwargs: object) -> tuple:
+        observed_decisions.append(np.asarray(kwargs["decisions"]))
+        return (
             np.ones(3, dtype=bool),
             {"source_opened_read_only": True},
-        ),
-    )
+        )
+
+    monkeypatch.setattr(f"{module}.remove_uncertain_floor", remove_floor)
     monkeypatch.setattr(
         f"{module}.propagate_dense_semantic_evidence",
         lambda *args, **kwargs: (
@@ -172,4 +179,8 @@ def test_source_photo_cleanup_writes_publishable_additive_artifacts(
     ).is_file()
     assert (output / "review" / "viewer.html").is_file()
     assert (output / "run-report.json").is_file()
+    assert np.array_equal(
+        observed_decisions[0],
+        np.array([1, 4, 3], dtype=np.uint8),
+    )
     assert source.read_bytes() == b"immutable source"

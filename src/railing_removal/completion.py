@@ -24,6 +24,22 @@ class LineCompletionParameters:
     random_seed: int = 172629
 
 
+@dataclass(frozen=True)
+class RigidSurfaceCompletionParameters:
+    minimum_object_votes: int = 1
+    seed_excess_green_max: float = 5.0
+    seed_saturation_max: float = 0.55
+    minimum_surface_seed_points: int = 200
+    minimum_surface_span: float = 1.0
+    fit_trim_quantile: float = 0.90
+    fit_iterations: int = 4
+    plane_distance: float = 0.40
+    bounds_margin: float = 0.50
+    completion_excess_green_max: float = 35.0
+    completion_saturation_max: float = 0.45
+    strong_plant_margin: int = 3
+
+
 def _validate_vector(name: str, values: np.ndarray, point_count: int) -> np.ndarray:
     values = np.asarray(values)
     if values.shape != (point_count,):
@@ -236,6 +252,186 @@ def complete_rigid_line_classes(
     return rejected, {
         "schema_version": 1,
         "strategy": "planned-rigid-line-classes-v1",
+        "class_count": len(class_reports),
+        "completed_point_count": int(rejected.sum()),
+        "classes": class_reports,
+    }
+
+
+def _complete_rigid_surface(
+    coordinates: np.ndarray,
+    *,
+    rgb: np.ndarray,
+    candidate_mask: np.ndarray,
+    seed_mask: np.ndarray,
+    object_votes: np.ndarray,
+    plant_votes: np.ndarray,
+    parameters: RigidSurfaceCompletionParameters,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    point_count = len(coordinates)
+    excess_green = 2.0 * rgb[:, 1] - rgb[:, 0] - rgb[:, 2]
+    saturation = (rgb.max(axis=1) - rgb.min(axis=1)) / np.maximum(
+        rgb.max(axis=1),
+        1.0,
+    )
+    confirmed = (
+        seed_mask
+        & (object_votes >= parameters.minimum_object_votes)
+        & (object_votes > plant_votes)
+    )
+    structural_seeds = confirmed & (
+        (excess_green <= parameters.seed_excess_green_max)
+        | (saturation <= parameters.seed_saturation_max)
+    )
+    seed_points = coordinates[structural_seeds]
+    rejected = np.zeros(point_count, dtype=bool)
+    surface_reports: list[dict[str, Any]] = []
+
+    if len(seed_points) >= parameters.minimum_surface_seed_points:
+        fit_points = seed_points
+        center = np.median(fit_points, axis=0)
+        for _ in range(parameters.fit_iterations):
+            centered = fit_points - center
+            covariance = centered.T @ centered / len(fit_points)
+            values, vectors = np.linalg.eigh(covariance)
+            normal = vectors[:, np.argmin(values)]
+            distances = np.abs((fit_points - center) @ normal)
+            cutoff = np.quantile(
+                distances,
+                parameters.fit_trim_quantile,
+            )
+            fit_points = fit_points[distances <= cutoff]
+            center = np.median(fit_points, axis=0)
+
+        centered = fit_points - center
+        covariance = centered.T @ centered / len(fit_points)
+        values, vectors = np.linalg.eigh(covariance)
+        order = np.argsort(values)
+        normal = vectors[:, order[0]]
+        axes = vectors[:, order[1:]]
+        seed_projection = (fit_points - center) @ axes
+        bounds = np.quantile(seed_projection, (0.005, 0.995), axis=0)
+        spans = bounds[1] - bounds[0]
+        fit_distances = np.abs((fit_points - center) @ normal)
+        planar = (
+            float(np.quantile(fit_distances, 0.95))
+            <= parameters.plane_distance
+        )
+        if planar and float(spans.max()) >= parameters.minimum_surface_span:
+            projected = (coordinates - center) @ axes
+            inside = np.all(
+                (projected >= bounds[0] - parameters.bounds_margin)
+                & (projected <= bounds[1] + parameters.bounds_margin),
+                axis=1,
+            )
+            distance = np.abs((coordinates - center) @ normal)
+            color_eligible = (
+                excess_green <= parameters.completion_excess_green_max
+            ) | (saturation <= parameters.completion_saturation_max)
+            strong_plant = plant_votes.astype(np.int16) >= (
+                object_votes.astype(np.int16)
+                + parameters.strong_plant_margin
+            )
+            rejected = (
+                candidate_mask
+                & inside
+                & (distance <= parameters.plane_distance)
+                & color_eligible
+                & ~strong_plant
+            )
+            surface_reports.append(
+                {
+                    "center": center.tolist(),
+                    "normal": normal.tolist(),
+                    "spans": spans.tolist(),
+                    "seed_point_count": int(len(seed_points)),
+                    "fit_point_count": int(len(fit_points)),
+                    "seed_distance_95": float(
+                        np.quantile(fit_distances, 0.95)
+                    ),
+                    "completed_point_count": int(rejected.sum()),
+                }
+            )
+
+    return rejected, {
+        "schema_version": 1,
+        "parameters": asdict(parameters),
+        "candidate_point_count": int(candidate_mask.sum()),
+        "seed_candidate_point_count": int(seed_mask.sum()),
+        "confirmed_seed_count": int(confirmed.sum()),
+        "structural_seed_count": int(structural_seeds.sum()),
+        "accepted_surface_count": len(surface_reports),
+        "completed_point_count": int(rejected.sum()),
+        "surfaces": surface_reports,
+    }
+
+
+def complete_rigid_surface_classes(
+    coordinates: np.ndarray,
+    *,
+    rgb: np.ndarray,
+    candidate_mask: np.ndarray,
+    seed_mask: np.ndarray | None = None,
+    class_votes: Mapping[str, np.ndarray],
+    class_plant_votes: Mapping[str, np.ndarray],
+    parameters: RigidSurfaceCompletionParameters | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Complete planned rigid surfaces from class-exclusive semantic evidence."""
+    coordinates = np.asarray(coordinates, dtype=np.float64)
+    rgb = np.asarray(rgb, dtype=np.float64)
+    if coordinates.ndim != 2 or coordinates.shape[1] != 3:
+        raise ValueError("coordinates must have shape (point_count, 3)")
+    point_count = len(coordinates)
+    if rgb.shape != (point_count, 3):
+        raise ValueError(f"rgb must have shape ({point_count}, 3)")
+    candidate_mask = _validate_vector(
+        "candidate_mask",
+        candidate_mask,
+        point_count,
+    ).astype(bool, copy=False)
+    seed_mask = (
+        candidate_mask
+        if seed_mask is None
+        else _validate_vector("seed_mask", seed_mask, point_count).astype(
+            bool,
+            copy=False,
+        )
+    )
+    if not class_votes:
+        raise ValueError("at least one rigid-surface class is required")
+    if set(class_votes) != set(class_plant_votes):
+        raise ValueError("rigid-surface object and plant vote classes must match")
+    parameters = parameters or RigidSurfaceCompletionParameters()
+    if parameters.minimum_surface_seed_points < 3:
+        raise ValueError("minimum_surface_seed_points must be at least three")
+    if not 0.0 < parameters.fit_trim_quantile <= 1.0:
+        raise ValueError("fit_trim_quantile must be in (0, 1]")
+
+    rejected = np.zeros(point_count, dtype=bool)
+    class_reports: dict[str, dict[str, Any]] = {}
+    for class_id, votes in class_votes.items():
+        class_rejected, class_report = _complete_rigid_surface(
+            coordinates,
+            rgb=rgb,
+            candidate_mask=candidate_mask,
+            seed_mask=seed_mask,
+            object_votes=_validate_vector(
+                f"{class_id} object votes",
+                votes,
+                point_count,
+            ),
+            plant_votes=_validate_vector(
+                f"{class_id} plant votes",
+                class_plant_votes[class_id],
+                point_count,
+            ),
+            parameters=parameters,
+        )
+        rejected |= class_rejected
+        class_reports[class_id] = class_report
+    return rejected, {
+        "schema_version": 1,
+        "strategy": "planned-rigid-surface-classes-v1",
         "class_count": len(class_reports),
         "completed_point_count": int(rejected.sum()),
         "classes": class_reports,
