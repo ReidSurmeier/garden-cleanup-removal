@@ -269,3 +269,50 @@ def test_two_separate_semantic_ground_planes_are_both_completed() -> None:
     assert (
         report["classes"]["turf_ground"]["accepted_surface_count"] == 2
     )
+
+
+def test_class_exclusive_turf_evidence_overrides_noisy_ground_normals() -> None:
+    ground = np.array(
+        [
+            (float(x), float(y), 0.0)
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=np.float64,
+    )
+    root = np.array([(4.0, 3.0, 0.02)], dtype=np.float64)
+    coordinates = np.vstack((ground, root))
+    normals = np.tile((1.0, 0.0, 0.0), (len(coordinates), 1))
+    evidence_mask = np.zeros(len(coordinates), dtype=bool)
+    evidence_mask[: len(ground)] = np.array(
+        [
+            x % 2 == 0 or y in {0, 5}
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=bool,
+    )
+    normals[evidence_mask] = (0.0, 0.0, 1.0)
+    object_votes = np.full(len(coordinates), 2, dtype=np.uint8)
+    plant_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    plant_votes[-1] = 5
+
+    rejected, _ = complete_ground_surface_classes(
+        coordinates,
+        normals=normals,
+        candidate_mask=~evidence_mask,
+        seed_mask=evidence_mask,
+        class_votes={"turf_ground": object_votes},
+        class_plant_votes={"turf_ground": plant_votes},
+        parameters=GroundSurfaceCompletionParameters(
+            minimum_surface_seed_points=8,
+            minimum_surface_span=1.0,
+            seed_inlier_distance=0.08,
+            plane_distance=0.08,
+            ransac_iterations=300,
+            random_seed=23,
+        ),
+    )
+
+    assert rejected[: len(ground)][~evidence_mask[: len(ground)]].all()
+    assert not rejected[-1]

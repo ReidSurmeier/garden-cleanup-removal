@@ -240,12 +240,23 @@ def complete_ground_surface_classes(
                 )
                 distance = np.abs((coordinates - center) @ normal)
                 alignment = np.abs(normalized_normals @ normal)
+                class_exclusive_ground = (
+                    object_votes >= parameters.minimum_object_votes
+                ) & (object_votes > plant_votes)
                 surface_rejected = (
                     candidate_mask
                     & inside
                     & (distance <= parameters.plane_distance)
-                    & valid_normals
-                    & (alignment >= parameters.normal_alignment_min)
+                    & (
+                        (
+                            valid_normals
+                            & (
+                                alignment
+                                >= parameters.normal_alignment_min
+                            )
+                        )
+                        | class_exclusive_ground
+                    )
                     & ~strong_plant
                 )
                 newly_completed = surface_rejected & ~class_rejected
