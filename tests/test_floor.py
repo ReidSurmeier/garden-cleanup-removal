@@ -210,3 +210,62 @@ def test_raised_semantic_ground_plane_is_completed_without_roots_or_plants(
     assert (
         report["classes"]["turf_ground"]["accepted_surface_count"] == 1
     )
+
+
+def test_two_separate_semantic_ground_planes_are_both_completed() -> None:
+    lower = np.array(
+        [
+            (float(x), float(y), 0.0)
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=np.float64,
+    )
+    upper = np.array(
+        [
+            (float(x + 12), float(y), 3.0 + 0.15 * float(x))
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=np.float64,
+    )
+    coordinates = np.vstack((lower, upper))
+    normals = np.tile((0.0, 0.0, 1.0), (len(coordinates), 1))
+    upper_normal = np.array((-0.15, 0.0, 1.0), dtype=np.float64)
+    upper_normal /= np.linalg.norm(upper_normal)
+    normals[len(lower) :] = upper_normal
+    plane_evidence = np.array(
+        [
+            x % 2 == 0 or y in {0, 5}
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=bool,
+    )
+    evidence_mask = np.tile(plane_evidence, 2)
+    object_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    object_votes[evidence_mask] = 2
+
+    rejected, report = complete_ground_surface_classes(
+        coordinates,
+        normals=normals,
+        candidate_mask=~evidence_mask,
+        seed_mask=evidence_mask,
+        class_votes={"turf_ground": object_votes},
+        class_plant_votes={
+            "turf_ground": np.zeros(len(coordinates), dtype=np.uint8)
+        },
+        parameters=GroundSurfaceCompletionParameters(
+            minimum_surface_seed_points=8,
+            minimum_surface_span=1.0,
+            seed_inlier_distance=0.08,
+            plane_distance=0.08,
+            ransac_iterations=500,
+            random_seed=19,
+        ),
+    )
+
+    assert rejected[~evidence_mask].all()
+    assert (
+        report["classes"]["turf_ground"]["accepted_surface_count"] == 2
+    )

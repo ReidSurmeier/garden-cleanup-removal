@@ -27,10 +27,56 @@ class GroundSurfaceCompletionParameters:
     minimum_surface_span: float = 1.0
     fit_trim_quantile: float = 0.90
     fit_iterations: int = 4
+    seed_inlier_distance: float = 0.30
+    max_surfaces: int = 6
+    ransac_iterations: int = 500
+    random_seed: int = 172629
     plane_distance: float = 0.50
     bounds_margin: float = 0.50
     normal_alignment_min: float = 0.55
     strong_plant_margin: int = 2
+
+
+def _best_seed_plane(
+    points: np.ndarray,
+    *,
+    distance_threshold: float,
+    iterations: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    if len(points) < 3:
+        return None
+    scoring_ids = rng.choice(
+        len(points),
+        size=min(8_000, len(points)),
+        replace=False,
+    )
+    scoring = points[scoring_ids]
+    best: tuple[int, np.ndarray, np.ndarray] | None = None
+    for _ in range(iterations):
+        first, second, third = points[
+            rng.choice(len(points), 3, replace=False)
+        ]
+        normal = np.cross(second - first, third - first)
+        length = float(np.linalg.norm(normal))
+        if length < 1e-8:
+            continue
+        normal /= length
+        score = int(
+            np.count_nonzero(
+                np.abs((scoring - first) @ normal)
+                <= distance_threshold
+            )
+        )
+        if best is None or score > best[0]:
+            best = score, first, normal
+    if best is None:
+        return None
+    _, origin, normal = best
+    inliers = (
+        np.abs((points - origin) @ normal) <= distance_threshold
+    )
+    return origin, normal, inliers
 
 
 def complete_ground_surface_classes(
@@ -70,6 +116,10 @@ def complete_ground_surface_classes(
         raise ValueError("minimum_surface_seed_points must be at least three")
     if not 0.0 < parameters.fit_trim_quantile <= 1.0:
         raise ValueError("fit_trim_quantile must be in (0, 1]")
+    if parameters.max_surfaces < 1:
+        raise ValueError("max_surfaces must be positive")
+    if parameters.ransac_iterations < 1:
+        raise ValueError("ransac_iterations must be positive")
 
     normal_lengths = np.linalg.norm(normals, axis=1)
     valid_normals = normal_lengths > 1e-8
@@ -97,9 +147,33 @@ def complete_ground_surface_classes(
         seed_points = coordinates[confirmed]
         class_rejected = np.zeros(point_count, dtype=bool)
         surface_reports: list[dict[str, Any]] = []
+        remaining_seed_points = seed_points
+        rng = np.random.default_rng(parameters.random_seed)
+        strong_plant = plant_votes.astype(np.int16) >= (
+            object_votes.astype(np.int16)
+            + parameters.strong_plant_margin
+        )
 
-        if len(seed_points) >= parameters.minimum_surface_seed_points:
-            fit_points = seed_points
+        while (
+            len(remaining_seed_points)
+            >= parameters.minimum_surface_seed_points
+            and len(surface_reports) < parameters.max_surfaces
+        ):
+            fitted = _best_seed_plane(
+                remaining_seed_points,
+                distance_threshold=parameters.seed_inlier_distance,
+                iterations=parameters.ransac_iterations,
+                rng=rng,
+            )
+            if fitted is None:
+                break
+            _, _, initial_inliers = fitted
+            if (
+                int(initial_inliers.sum())
+                < parameters.minimum_surface_seed_points
+            ):
+                break
+            fit_points = remaining_seed_points[initial_inliers]
             center = np.median(fit_points, axis=0)
             for _ in range(parameters.fit_iterations):
                 centered = fit_points - center
@@ -114,13 +188,29 @@ def complete_ground_surface_classes(
                 fit_points = fit_points[distances <= cutoff]
                 center = np.median(fit_points, axis=0)
 
+            if len(fit_points) < 3:
+                remaining_seed_points = remaining_seed_points[
+                    ~initial_inliers
+                ]
+                continue
             centered = fit_points - center
             covariance = centered.T @ centered / len(fit_points)
             values, vectors = np.linalg.eigh(covariance)
             order = np.argsort(values)
             normal = vectors[:, order[0]]
             axes = vectors[:, order[1:]]
-            seed_projection = (fit_points - center) @ axes
+            final_inliers = (
+                np.abs((remaining_seed_points - center) @ normal)
+                <= parameters.seed_inlier_distance
+            )
+            surface_seed_points = remaining_seed_points[final_inliers]
+            remaining_seed_points = remaining_seed_points[~final_inliers]
+            if (
+                len(surface_seed_points)
+                < parameters.minimum_surface_seed_points
+            ):
+                continue
+            seed_projection = (surface_seed_points - center) @ axes
             bounds = np.quantile(
                 seed_projection,
                 (0.005, 0.995),
@@ -150,11 +240,7 @@ def complete_ground_surface_classes(
                 )
                 distance = np.abs((coordinates - center) @ normal)
                 alignment = np.abs(normalized_normals @ normal)
-                strong_plant = plant_votes.astype(np.int16) >= (
-                    object_votes.astype(np.int16)
-                    + parameters.strong_plant_margin
-                )
-                class_rejected = (
+                surface_rejected = (
                     candidate_mask
                     & inside
                     & (distance <= parameters.plane_distance)
@@ -162,18 +248,25 @@ def complete_ground_surface_classes(
                     & (alignment >= parameters.normal_alignment_min)
                     & ~strong_plant
                 )
+                newly_completed = surface_rejected & ~class_rejected
+                class_rejected |= surface_rejected
                 surface_reports.append(
                     {
                         "center": center.tolist(),
                         "normal": normal.tolist(),
                         "spans": spans.tolist(),
-                        "seed_point_count": int(len(seed_points)),
+                        "seed_point_count": int(
+                            len(surface_seed_points)
+                        ),
                         "fit_point_count": int(len(fit_points)),
                         "seed_distance_95": float(
                             np.quantile(fit_distances, 0.95)
                         ),
                         "completed_point_count": int(
-                            class_rejected.sum()
+                            surface_rejected.sum()
+                        ),
+                        "newly_completed_point_count": int(
+                            newly_completed.sum()
                         ),
                     }
                 )
@@ -192,7 +285,7 @@ def complete_ground_surface_classes(
 
     return rejected, {
         "schema_version": 1,
-        "strategy": "semantic-seeded-ground-surfaces-v1",
+        "strategy": "semantic-seeded-ground-surfaces-v2",
         "class_count": len(class_reports),
         "completed_point_count": int(rejected.sum()),
         "classes": class_reports,
