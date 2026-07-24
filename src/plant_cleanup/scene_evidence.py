@@ -14,6 +14,7 @@ from plant_cleanup.sam2_votes import aggregate_sam2_votes
 
 
 CLASS_ID = re.compile(r"^[a-z][a-z0-9_-]*$")
+VIEW_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
 def _create_scene_output_dir(output_dir: Path) -> Path:
@@ -25,6 +26,56 @@ def _create_scene_output_dir(output_dir: Path) -> Path:
             f"scene evidence output already exists: {output_dir}"
         ) from error
     return output_dir
+
+
+def _build_manual_seed_mask(
+    render_dir: Path,
+    run_dir: Path,
+    regions: object,
+) -> tuple[np.ndarray | None, dict[str, Any] | None]:
+    if regions is None:
+        return None, None
+    if not isinstance(regions, list) or not regions:
+        raise ValueError("manual_seed_regions must be a non-empty list")
+    plant_votes = np.load(run_dir / "plant-votes.npy")
+    selected = np.zeros(len(plant_votes), dtype=bool)
+    views: list[str] = []
+    for region in regions:
+        if not isinstance(region, dict):
+            raise ValueError("manual seed region must be an object")
+        view = str(region.get("view", ""))
+        bounds = region.get("bounds")
+        if not VIEW_ID.fullmatch(view):
+            raise ValueError(f"invalid manual seed view: {view!r}")
+        if (
+            not isinstance(bounds, list)
+            or len(bounds) != 4
+            or not all(isinstance(value, (int, float)) for value in bounds)
+        ):
+            raise ValueError("manual seed bounds must contain four numbers")
+        x0, y0, x1, y1 = (float(value) for value in bounds)
+        if not (0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0):
+            raise ValueError("manual seed bounds must be normalized")
+        source_ids = np.load(render_dir / f"{view}-source-ids.npy")
+        if source_ids.ndim != 2:
+            raise ValueError("manual seed source ids must be a pixel grid")
+        height, width = source_ids.shape
+        left = int(np.floor(x0 * width))
+        right = int(np.ceil(x1 * width))
+        top = int(np.floor(y0 * height))
+        bottom = int(np.ceil(y1 * height))
+        point_ids = source_ids[top:bottom, left:right]
+        point_ids = point_ids[
+            (point_ids >= 0) & (point_ids < len(selected))
+        ]
+        selected[np.unique(point_ids)] = True
+        views.append(view)
+    np.save(run_dir / "manual-seed-mask.npy", selected)
+    return selected, {
+        "region_count": len(regions),
+        "selected_point_count": int(selected.sum()),
+        "views": sorted(set(views)),
+    }
 
 
 def fuse_scene_votes(
@@ -63,9 +114,23 @@ def fuse_scene_votes(
         background_arrays.append(background)
         np.save(output_dir / f"{class_id}-votes.npy", background)
         np.save(output_dir / f"{class_id}-plant-votes.npy", plant)
+        manual_path = run_dir / "manual-seed-mask.npy"
+        manual_count = 0
+        if manual_path.is_file():
+            manual = np.asarray(np.load(manual_path), dtype=bool)
+            if manual.shape != plant.shape:
+                raise ValueError(
+                    f"{class_id} manual seed mask must match votes"
+                )
+            np.save(
+                output_dir / f"{class_id}-manual-seed-mask.npy",
+                manual,
+            )
+            manual_count = int(manual.sum())
         class_report[class_id] = {
             "voted_point_count": int(np.count_nonzero(background)),
             "maximum_view_votes": int(background.max(initial=0)),
+            "manual_seed_point_count": manual_count,
         }
 
     plant_votes = np.maximum.reduce(plant_arrays)
@@ -313,15 +378,21 @@ def run_scene_evidence(
             background_depth_fraction=background_depth_fraction,
             background_anchor_limit=background_anchor_limit,
         )
+        manual_mask, manual_report = _build_manual_seed_mask(
+            render_dir,
+            sam2_dir,
+            object_class.get("manual_seed_regions"),
+        )
         segmented_views = sum(
             view.get("status") == "segmented"
             for view in sam2_report["views"]
         )
-        quality_state = (
-            "usable"
-            if segmented_views >= required_segmented_views
-            else "insufficient_segmented_views"
-        )
+        if segmented_views >= required_segmented_views:
+            quality_state = "usable"
+        elif manual_mask is not None and manual_mask.any():
+            quality_state = "usable_manual"
+        else:
+            quality_state = "insufficient_segmented_views"
         class_runs[class_id] = sam2_dir
         class_policies[class_id] = decision_policy
         class_reports[class_id] = {
@@ -337,6 +408,10 @@ def run_scene_evidence(
             "clipseg": clipseg_report,
             "sam2": sam2_report,
         }
+        if manual_report is not None:
+            class_reports[class_id][
+                "manual_seed_regions"
+            ] = manual_report
 
     fused = fuse_scene_votes(
         class_runs,

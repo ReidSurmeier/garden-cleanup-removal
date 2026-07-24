@@ -22,7 +22,8 @@ def test_ground_surface_evidence_completes_raised_turf_without_raised_plants(
     coordinates = np.vstack((turf, raised_plant))
     cloud = np.zeros(len(coordinates), dtype=VERTEX_DTYPE)
     cloud["x"], cloud["y"], cloud["z"] = coordinates.T
-    cloud["nz"][: len(turf)] = 1.0
+    cloud["nz"][: len(turf)] = 0.6
+    cloud["nx"][: len(turf)] = 0.8
     cloud["nx"][len(turf) :] = 1.0
     cloud["green"] = 140
     cloud["red"] = 40
@@ -39,7 +40,7 @@ def test_ground_surface_evidence_completes_raised_turf_without_raised_plants(
     generic_plant = np.full(len(cloud), 3, dtype=np.uint8)
     generic_background = np.zeros(len(cloud), dtype=np.uint8)
     turf_votes = np.zeros(len(cloud), dtype=np.uint8)
-    turf_votes[0] = 4
+    turf_votes[: len(turf)] = 4
 
     report = refine_with_semantics(
         tmp_path / "source.ply",

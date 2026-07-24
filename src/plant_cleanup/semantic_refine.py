@@ -298,7 +298,6 @@ def refine_with_semantics(
             class_background = (
                 (votes >= parameters.min_planter_views)
                 & (votes >= paired_plant)
-                & (normal_z >= parameters.ground_normal_min)
             )
         else:
             class_background = np.zeros(len(cloud), dtype=bool)

@@ -8,5 +8,25 @@
       "turf_ground",
       "fence"
     ]
+  },
+  "class_overrides": {
+    "2026-07-17 12.17.25": {
+      "fence": {
+        "manual_seed_regions": [
+          {
+            "view": "orbit-045",
+            "bounds": [0.45, 0.47, 0.72, 0.60]
+          },
+          {
+            "view": "orbit-180",
+            "bounds": [0.05, 0.45, 0.32, 0.58]
+          },
+          {
+            "view": "orbit-225",
+            "bounds": [0.20, 0.46, 0.62, 0.60]
+          }
+        ]
+      }
+    }
   }
 }

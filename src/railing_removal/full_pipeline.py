@@ -528,6 +528,29 @@ def run_full_cleanup(
             )
         fused = scene_evidence / "fused"
         evidence_mask = semantic_decisions == 4
+        completion_seed_mask = evidence_mask.copy()
+        completion_class_votes: dict[str, np.ndarray] = {}
+        completion_class_plant_votes: dict[str, np.ndarray] = {}
+        for class_id in rigid_completion_classes:
+            votes = np.load(fused / f"{class_id}-votes.npy")
+            plant_votes = np.load(
+                fused / f"{class_id}-plant-votes.npy"
+            )
+            manual_path = fused / f"{class_id}-manual-seed-mask.npy"
+            if manual_path.is_file():
+                manual = np.asarray(np.load(manual_path), dtype=bool)
+                completion_seed_mask |= manual
+                promoted = np.minimum(
+                    plant_votes.astype(np.uint16) + 1,
+                    255,
+                ).astype(np.uint8)
+                votes = votes.copy()
+                votes[manual] = np.maximum(
+                    votes[manual],
+                    promoted[manual],
+                )
+            completion_class_votes[class_id] = votes
+            completion_class_plant_votes[class_id] = plant_votes
         railing_reject = np.zeros(len(cloud), dtype=bool)
         line_report: dict[str, Any] = {
             "status": "skipped",
@@ -543,15 +566,13 @@ def run_full_cleanup(
                 coordinates,
                 rgb=rgb,
                 candidate_mask=floor_keep,
-                seed_mask=evidence_mask,
+                seed_mask=completion_seed_mask,
                 class_votes={
-                    class_id: np.load(fused / f"{class_id}-votes.npy")
+                    class_id: completion_class_votes[class_id]
                     for class_id in rigid_line_classes
                 },
                 class_plant_votes={
-                    class_id: np.load(
-                        fused / f"{class_id}-plant-votes.npy"
-                    )
+                    class_id: completion_class_plant_votes[class_id]
                     for class_id in rigid_line_classes
                 },
             )
@@ -562,15 +583,13 @@ def run_full_cleanup(
                 coordinates,
                 rgb=rgb,
                 candidate_mask=floor_keep,
-                seed_mask=evidence_mask,
+                seed_mask=completion_seed_mask,
                 class_votes={
-                    class_id: np.load(fused / f"{class_id}-votes.npy")
+                    class_id: completion_class_votes[class_id]
                     for class_id in rigid_surface_classes
                 },
                 class_plant_votes={
-                    class_id: np.load(
-                        fused / f"{class_id}-plant-votes.npy"
-                    )
+                    class_id: completion_class_plant_votes[class_id]
                     for class_id in rigid_surface_classes
                 },
             )

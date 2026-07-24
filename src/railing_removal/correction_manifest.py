@@ -102,6 +102,15 @@ def build_targeted_correction_manifest(
     assignments = assignment_document.get("assignments")
     if not isinstance(assignments, dict) or not assignments:
         raise ValueError("targeted correction assignments must not be empty")
+    class_overrides = assignment_document.get("class_overrides", {})
+    if not isinstance(class_overrides, dict):
+        raise ValueError("targeted correction class_overrides must be an object")
+    unknown_override_scans = set(class_overrides) - set(assignments)
+    if unknown_override_scans:
+        raise ValueError(
+            "class override references unassigned scan: "
+            f"{sorted(unknown_override_scans)[0]}"
+        )
 
     plan_root = output_path.parent / f"{output_path.stem}-scene-plans"
     corrections: list[dict[str, Any]] = []
@@ -125,12 +134,35 @@ def build_targeted_correction_manifest(
                 "targeted correction contains unknown class: "
                 f"{sorted(unknown_classes)[0]}"
             )
+        scan_overrides = class_overrides.get(scan_id, {})
+        if not isinstance(scan_overrides, dict):
+            raise ValueError(f"invalid class overrides for {scan_id}")
+        unknown_override_classes = set(scan_overrides) - set(class_ids)
+        if unknown_override_classes:
+            raise ValueError(
+                "class override references unassigned class: "
+                f"{sorted(unknown_override_classes)[0]}"
+            )
         plan_path = plan_root / f"{scan_id}.json"
         if plan_path.exists():
             raise FileExistsError(plan_path)
         object_classes: list[dict[str, Any]] = []
         for class_id in class_ids:
             object_class = copy.deepcopy(classes[class_id])
+            override = scan_overrides.get(class_id, {})
+            if not isinstance(override, dict):
+                raise ValueError(
+                    f"invalid {class_id} override for {scan_id}"
+                )
+            unknown_override_keys = set(override) - {
+                "manual_seed_regions"
+            }
+            if unknown_override_keys:
+                raise ValueError(
+                    "unsupported class override: "
+                    f"{sorted(unknown_override_keys)[0]}"
+                )
+            object_class.update(copy.deepcopy(override))
             object_class["id"] = class_id
             object_classes.append(object_class)
         plans.append(

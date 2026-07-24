@@ -169,6 +169,18 @@ def test_builds_targeted_visual_qa_corrections_with_object_scene_plans(
         {
             "schema_version": 1,
             "assignments": {"scan-with-turf": ["turf_ground"]},
+            "class_overrides": {
+                "scan-with-turf": {
+                    "turf_ground": {
+                        "manual_seed_regions": [
+                            {
+                                "view": "orbit-000",
+                                "bounds": [0.1, 0.2, 0.3, 0.4],
+                            }
+                        ]
+                    }
+                }
+            },
         },
     )
 
@@ -190,6 +202,9 @@ def test_builds_targeted_visual_qa_corrections_with_object_scene_plans(
     assert plan["scan_id"] == "scan-with-turf"
     assert [item["id"] for item in plan["classes"]] == ["turf_ground"]
     assert plan["classes"][0]["decision_policy"] == "ground_surface"
+    assert plan["classes"][0]["manual_seed_regions"][0]["view"] == (
+        "orbit-000"
+    )
     assert json.loads(output.read_text(encoding="utf-8")) == result
 
 
