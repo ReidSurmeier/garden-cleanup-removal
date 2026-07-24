@@ -2,40 +2,60 @@
   "schema_version": 1,
   "scans": {
     "2026-07-15 16.50.58": {
-      "status": "no_plant_candidate",
-      "evidence": "Reference frames show a street, cars, and rail tracks without a clear plant subject."
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows palms, but the point cloud is only a thin street line with no coherent palm structure."
     },
     "2026-07-15 16.51.42": {
       "status": "no_plant_candidate",
-      "evidence": "Reference frames center a large metal sculpture rather than a plant."
+      "evidence": "Reference video and point cloud center a large metal sculpture rather than a plant subject."
     },
     "2026-07-16 09.19.45": {
-      "status": "manual_review",
-      "evidence": "Reference frames show a city scene with palms; verify whether a coherent palm survives the sparse reconstruction."
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows palms, but the point cloud collapses to sparse fragments with no usable palm structure."
     },
     "2026-07-16 09.20.38": {
-      "status": "manual_review",
-      "evidence": "Reference frames show a city scene with palms; verify the intended plant subject against the point reconstruction."
+      "status": "accept_clean",
+      "evidence": "Reference video shows palms and the cleaned point cloud retains two coherent palm structures."
     },
     "2026-07-16 10.20.31": {
       "status": "no_plant_candidate",
-      "evidence": "Reference frames show waterfront and pier structures without a clear plant subject."
+      "evidence": "Reference video and point cloud show waterfront and pier structures without a plant subject."
     },
     "2026-07-16 10.40.25": {
       "status": "no_plant_candidate",
-      "evidence": "Reference frames show waterfront and pier structures without a clear plant subject."
+      "evidence": "Reference video and point cloud show waterfront and pier structures without a plant subject."
+    },
+    "2026-07-16 11.31.30": {
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows dense shrubs, but the point cloud is almost empty and does not reconstruct them."
     },
     "2026-07-16 16.56.30": {
       "status": "no_plant_candidate",
-      "evidence": "Reference frames show waterfront and pier structures without a clear plant subject."
+      "evidence": "Reference video and sparse point cloud show waterfront and pier structures without a plant subject."
     },
     "2026-07-16 16.58.54": {
       "status": "no_plant_candidate",
-      "evidence": "Reference frames show a waterfront railing and pier without a clear plant subject."
+      "evidence": "Reference video and point cloud show a waterfront railing and pier without a plant subject."
     },
     "2026-07-16 17.05.27": {
       "status": "no_plant_candidate",
-      "evidence": "Reference frames show cobblestones and rocks without a coherent plant subject."
+      "evidence": "Reference video and point cloud show cobblestones and rocks without a coherent plant subject."
+    },
+    "2026-07-17 10.54.04": {
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows a fern bed, but the point cloud collapses to an almost empty line."
+    },
+    "2026-07-17 11.17.18": {
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows shrubs and trees, but the point cloud contains only sparse unusable fragments."
+    },
+    "2026-07-17 11.41.23": {
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows mixed shrubs, but the point cloud contains only a tiny disconnected cluster and line."
+    },
+    "2026-07-17 13.28.02": {
+      "status": "no_coherent_reconstruction",
+      "evidence": "Reference video shows a planted bed, but the point cloud is an almost empty horizontal line."
     }
   }
 }
