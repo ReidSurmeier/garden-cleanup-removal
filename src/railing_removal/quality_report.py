@@ -77,6 +77,27 @@ def _complete_scan_quality(
         if conservative_count
         else 0.0
     )
+    source_photo = run_report.get("source_photo")
+    if isinstance(source_photo, dict):
+        photo_seen = int(source_photo.get("seen_point_count", 0))
+        photo_unseen = int(source_photo.get("unseen_point_count", 0))
+        photo_plant = int(source_photo.get("plant_point_count", 0))
+        photo_background = int(
+            source_photo.get("background_point_count", 0)
+        )
+        source_photo_unseen_ratio = (
+            photo_unseen / source_count if source_count else 0.0
+        )
+        decided_photo_points = photo_plant + photo_background
+        source_photo_plant_ratio = (
+            photo_plant / decided_photo_points
+            if decided_photo_points
+            else 0.0
+        )
+    else:
+        photo_seen = 0
+        source_photo_unseen_ratio = None
+        source_photo_plant_ratio = None
     flags: list[dict[str, Any]] = []
     reference_value = reference.get(scan_id)
     if (
@@ -125,6 +146,29 @@ def _complete_scan_quality(
                 "20%; inspect roots and boundary leaves.",
             )
         )
+    if (
+        source_photo_unseen_ratio is not None
+        and source_photo_unseen_ratio > 0.20
+    ):
+        flags.append(
+            _flag(
+                "weak_source_photo_coverage",
+                "More than 20% of the cloud lacks calibrated source-photo "
+                "evidence and needs visual verification.",
+            )
+        )
+    if (
+        source_photo_plant_ratio is not None
+        and photo_seen > 0
+        and source_photo_plant_ratio < 0.02
+    ):
+        flags.append(
+            _flag(
+                "low_source_photo_plant_evidence",
+                "Fewer than 2% of source-photo-decided points were labeled "
+                "as plant; inspect for a non-coherent or non-plant scan.",
+            )
+        )
     flags.extend(_assigned_object_flags(run_report))
     if any(
         flag["code"] == "reference_no_plant_candidate" for flag in flags
@@ -145,6 +189,8 @@ def _complete_scan_quality(
             "floor_candidate": floor_count,
             "retention_ratio": retention_ratio,
             "strict_conservative_gap_ratio": conservative_gap,
+            "source_photo_unseen_ratio": source_photo_unseen_ratio,
+            "source_photo_plant_ratio": source_photo_plant_ratio,
         },
         "flags": flags,
         "output": str(Path(result["output"]).resolve()),
