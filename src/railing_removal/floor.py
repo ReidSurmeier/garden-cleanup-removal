@@ -28,9 +28,15 @@ def remove_uncertain_floor(
     decisions: np.ndarray,
     plant_votes: np.ndarray,
     background_votes: np.ndarray,
+    candidate_mask: np.ndarray | None = None,
     parameters: FloorRemovalParameters | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """Remove coplanar floor geometry seeded by the uncertain decision layer."""
+    """Remove coplanar floor geometry seeded by the uncertain decision layer.
+
+    ``candidate_mask`` supports a second, post-semantic pass without restoring
+    anything rejected by the first pass. The uncertain decision layer remains
+    the only source of floor seeds.
+    """
 
     parameters = parameters or FloorRemovalParameters()
     coordinates = np.asarray(coordinates, dtype=np.float64)
@@ -48,20 +54,28 @@ def remove_uncertain_floor(
         "plant_votes": np.asarray(plant_votes),
         "background_votes": np.asarray(background_votes),
     }
+    if candidate_mask is not None:
+        arrays["candidate_mask"] = np.asarray(candidate_mask, dtype=bool)
     for name, values in arrays.items():
         if values.shape != (point_count,):
             raise ValueError(f"{name} must have shape ({point_count},)")
     decisions = arrays["decisions"]
     plant_votes = arrays["plant_votes"]
     background_votes = arrays["background_votes"]
+    candidate_mask = arrays.get("candidate_mask")
 
     normal_lengths = np.linalg.norm(normals, axis=1)
     valid_normals = normal_lengths > 1e-8
     normalized_normals = normals.copy()
     normalized_normals[valid_normals] /= normal_lengths[valid_normals, None]
     excess_green = 2.0 * rgb[:, 1] - rgb[:, 0] - rgb[:, 2]
-    keep_before_floor = (decisions == 1) | (
-        (decisions == 6) & (plant_votes > background_votes)
+    keep_before_floor = (
+        candidate_mask.copy()
+        if candidate_mask is not None
+        else (
+            (decisions == 1)
+            | ((decisions == 6) & (plant_votes > background_votes))
+        )
     )
     keep = keep_before_floor.copy()
     uncertain_rows = np.flatnonzero(decisions == 5)
@@ -135,12 +149,26 @@ def remove_uncertain_floor(
                     background_votes.astype(np.int16)
                     + parameters.strong_plant_margin
                 )
+                # A dense vision model can call flat brown mulch "grass".
+                # Protect its plant vote only when color or surface orientation
+                # independently supports plant structure. Brown geometry that
+                # is aligned to the seeded floor plane remains eligible.
+                independent_plant_structure = (
+                    (excess_green >= parameters.excess_green_max)
+                    | (alignment < parameters.normal_alignment_min)
+                )
+                protected_plant = strong_plant & independent_plant_structure
+                growth_candidates = (
+                    keep_before_floor | (decisions == 5)
+                    if candidate_mask is not None
+                    else np.isin(decisions, [1, 5, 6])
+                )
                 eligible = (
-                    np.isin(decisions, [1, 5, 6])
+                    growth_candidates
                     & (distance <= parameters.plane_distance)
                     & valid_normals
                     & (alignment >= parameters.normal_alignment_min)
-                    & ~strong_plant
+                    & ~protected_plant
                 )
                 eligible[component_seed_rows] = True
                 rows = np.flatnonzero(eligible)

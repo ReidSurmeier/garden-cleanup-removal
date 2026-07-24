@@ -95,3 +95,69 @@ def test_adaptive_floor_growth_removes_green_ground_but_protects_root_evidence(
     assert not keep[: len(uncertain_floor) + len(connected_green_ground)].any()
     assert keep[-2:].all()
     assert report["grown_floor_point_count"] == len(coordinates) - 2
+
+
+def test_post_semantic_floor_growth_removes_brown_model_mistake_without_roots_or_leaves(
+) -> None:
+    uncertain_floor = np.array(
+        [
+            (float(x), float(y), 0.0)
+            for x in range(3)
+            for y in range(2)
+        ],
+        dtype=np.float64,
+    )
+    brown_mulch = np.array(
+        [
+            (float(x), float(y), 0.0)
+            for x in range(3, 10)
+            for y in range(2)
+        ],
+        dtype=np.float64,
+    )
+    root = np.array([(5.0, 0.4, 0.02)], dtype=np.float64)
+    low_leaf = np.array([(6.0, 0.4, 0.03)], dtype=np.float64)
+    raised_plant = np.array([(5.0, 0.0, 2.0)], dtype=np.float64)
+    coordinates = np.vstack(
+        (uncertain_floor, brown_mulch, root, low_leaf, raised_plant)
+    )
+    normals = np.tile((0.0, 0.0, 1.0), (len(coordinates), 1))
+    normals[-3] = (1.0, 0.0, 0.0)
+    rgb = np.tile((110, 85, 65), (len(coordinates), 1))
+    rgb[: len(uncertain_floor)] = (100, 100, 100)
+    rgb[-2:] = (35, 150, 40)
+    decisions = np.ones(len(coordinates), dtype=np.uint8)
+    decisions[: len(uncertain_floor)] = 5
+    candidate = np.ones(len(coordinates), dtype=bool)
+    candidate[: len(uncertain_floor)] = False
+    plant_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    plant_votes[len(uncertain_floor) :] = 4
+
+    keep, report = remove_uncertain_floor(
+        coordinates,
+        normals=normals,
+        rgb=rgb,
+        decisions=decisions,
+        plant_votes=plant_votes,
+        background_votes=np.zeros(len(coordinates), dtype=np.uint8),
+        candidate_mask=candidate,
+        parameters=FloorRemovalParameters(
+            voxel_size=1.1,
+            minimum_component_points=2,
+            component_fraction=0.0,
+            plane_distance=0.1,
+            bounds_margin=0.1,
+            grow_floor_components=True,
+            strong_plant_margin=2,
+        ),
+    )
+
+    mulch = slice(
+        len(uncertain_floor),
+        len(uncertain_floor) + len(brown_mulch),
+    )
+    assert not keep[mulch].any()
+    assert keep[-3:].all()
+    assert report["grown_floor_point_count"] == (
+        len(uncertain_floor) + len(brown_mulch)
+    )
