@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "assignments": {
+    "2026-07-16 09.31.38": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-16 09.33.54": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-16 09.37.20": [
+      "pavement_ground"
+    ],
+    "2026-07-16 11.32.34": [
+      "turf_ground"
+    ],
+    "2026-07-16 11.32.55": [
+      "turf_ground"
+    ],
+    "2026-07-17 10.38.36": [
+      "turf_ground"
+    ],
+    "2026-07-17 11.27.39": [
+      "turf_ground"
+    ],
+    "2026-07-17 11.30.07": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 11.32.09": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 11.33.44": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 13.24.49": [
+      "turf_ground",
+      "pavement_ground"
+    ]
+  }
+}
