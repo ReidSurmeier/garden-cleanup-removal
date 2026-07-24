@@ -72,6 +72,20 @@ def _fake_metashape() -> object:
     )
 
 
+def _failing_metashape() -> object:
+    metashape = _fake_metashape()
+
+    class FailingReader:
+        def open(self, cloud: object) -> None:
+            pass
+
+        def read(self, count: int) -> list[object]:
+            raise RuntimeError("simulated reader failure")
+
+    metashape.PointCloud.Reader = FailingReader
+    return metashape
+
+
 def test_export_preserves_source_indices_colors_and_read_only_mode(
     tmp_path: Path,
 ) -> None:
@@ -117,3 +131,23 @@ def test_export_refuses_to_overwrite_an_existing_file(tmp_path: Path) -> None:
         )
 
     assert output.read_bytes() == b"keep me"
+
+
+def test_failed_export_preserves_partial_evidence_without_finalizing(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "plant.psx"
+    project.write_text("project", encoding="utf-8")
+    output = tmp_path / "cloud.ply"
+
+    with pytest.raises(RuntimeError, match="simulated reader failure"):
+        export_reader_cloud_readonly(
+            project,
+            output,
+            _failing_metashape(),
+        )
+
+    assert not output.exists()
+    partials = list(tmp_path.glob("cloud.ply.partial-*"))
+    assert len(partials) == 1
+    assert partials[0].stat().st_size > 0

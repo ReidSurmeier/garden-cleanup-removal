@@ -5,6 +5,7 @@ import math
 import struct
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 RECORD = struct.Struct("<ffffffBBBBI")
@@ -155,64 +156,63 @@ def export_reader_cloud_readonly(
 
     source_index = 0
     written = 0
-    try:
-        with output.open("xb") as destination:
-            destination.write(header)
-            while True:
-                points = reader.read(chunk_size)
-                if not points:
-                    break
-                buffer = bytearray()
-                for point in points:
-                    current_index = source_index
-                    source_index += 1
-                    if current_index % stride:
-                        continue
-                    position = _reframe(point.position, coordinate_frame)
-                    normal = (
-                        _reframe(
-                            point.normal,
-                            coordinate_frame,
-                            normalize=True,
-                        )
-                        if point.normal is not None
-                        else (0.0, 0.0, 0.0)
+    partial_output = output.with_name(
+        f"{output.name}.partial-{uuid4().hex}"
+    )
+    with partial_output.open("xb") as destination:
+        destination.write(header)
+        while True:
+            points = reader.read(chunk_size)
+            if not points:
+                break
+            buffer = bytearray()
+            for point in points:
+                current_index = source_index
+                source_index += 1
+                if current_index % stride:
+                    continue
+                position = _reframe(point.position, coordinate_frame)
+                normal = (
+                    _reframe(
+                        point.normal,
+                        coordinate_frame,
+                        normalize=True,
                     )
-                    color = (
-                        point.color
-                        if point.color is not None
-                        else (0, 0, 0)
+                    if point.normal is not None
+                    else (0.0, 0.0, 0.0)
+                )
+                color = (
+                    point.color if point.color is not None else (0, 0, 0)
+                )
+                buffer.extend(
+                    RECORD.pack(
+                        float(position[0]),
+                        float(position[1]),
+                        float(position[2]),
+                        float(normal[0]),
+                        float(normal[1]),
+                        float(normal[2]),
+                        _channel(color[0]),
+                        _channel(color[1]),
+                        _channel(color[2]),
+                        max(
+                            0,
+                            min(255, int(point.classification)),
+                        ),
+                        current_index,
                     )
-                    buffer.extend(
-                        RECORD.pack(
-                            float(position[0]),
-                            float(position[1]),
-                            float(position[2]),
-                            float(normal[0]),
-                            float(normal[1]),
-                            float(normal[2]),
-                            _channel(color[0]),
-                            _channel(color[1]),
-                            _channel(color[2]),
-                            max(
-                                0,
-                                min(255, int(point.classification)),
-                            ),
-                            current_index,
-                        )
-                    )
-                    written += 1
-                destination.write(buffer)
-    except Exception:
-        output.unlink(missing_ok=True)
-        raise
+                )
+                written += 1
+            destination.write(buffer)
 
     if source_index != source_count or written != exported_count:
-        output.unlink(missing_ok=True)
         raise RuntimeError(
             f"reader count mismatch: source={source_count}/{source_index}, "
             f"exported={exported_count}/{written}"
         )
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite export: {output}")
+    partial_output.rename(output)
     return {
         "metashape_version": str(metashape.version),
         "project": str(project),
