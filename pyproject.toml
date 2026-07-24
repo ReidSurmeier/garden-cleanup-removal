@@ -12,6 +12,7 @@ dependencies = ["numpy>=2.0", "pillow>=11.0", "plyfile>=1.1", "scipy>=1.15"]
 dev = ["pytest>=8.0"]
 vision = [
   "torch>=2.7",
+  "torchvision>=0.22",
   "transformers>=4.57,<5",
 ]
 

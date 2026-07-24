@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,15 @@ def test_readme_remains_limited_to_models_and_stack() -> None:
         flags=re.MULTILINE,
     )
     assert headings == ["Models", "Stack"]
+
+
+def test_vision_extra_declares_sam2_runtime_dependencies() -> None:
+    project = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    vision = project["project"]["optional-dependencies"]["vision"]
+
+    assert any(dependency.startswith("torchvision") for dependency in vision)
 
 
 def test_full_pipeline_refuses_mismatched_profile_without_creating_output(
