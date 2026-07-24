@@ -4,7 +4,10 @@ param(
     [string]$Commit,
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^F:\\3d_scans\\cleanup\\garden-cleanup-removal-[^\\]+\\source-photo-semantic-[^\\]+$")]
-    [string]$SemanticRoot
+    [string]$SemanticRoot,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+    [string]$RunTag
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,12 +20,12 @@ $baselineManifest = Join-Path $baselineRoot "adaptive-profiles\cleanup-manifest.
 $baselineOutput = Join-Path $baselineRoot "cleanup"
 $baselineReport = Join-Path $baselineOutput "batch-report.json"
 $semanticReport = Join-Path $semanticRoot "batch-report.json"
-$versionRoot = "F:\3d_scans\cleanup\garden-cleanup-removal-$commit"
+$versionRoot = "F:\3d_scans\cleanup\garden-cleanup-removal-$commit-$RunTag"
 $correctionRoot = Join-Path $versionRoot "baseline-corrections-v2"
 $correctionReport = Join-Path $correctionRoot "batch-report.json"
 $cleanupRoot = Join-Path $versionRoot "source-photo-cleanup-v2"
 $cleanupReport = Join-Path $cleanupRoot "batch-report.json"
-$orchestration = "F:\3d_scans\cleanup\garden-cleanup-orchestration-$commit-v2"
+$orchestration = "F:\3d_scans\cleanup\garden-cleanup-orchestration-$commit-$RunTag"
 $correctionManifest = Join-Path $orchestration "baseline-corrections-v2-manifest.json"
 $log = Join-Path $orchestration "orchestration.log"
 
@@ -122,6 +125,7 @@ $cleanup = Get-Content -LiteralPath $cleanupReport -Raw |
 $completion = [ordered]@{
     schema_version = 1
     code_commit = $commit
+    run_tag = $RunTag
     finished_at = (Get-Date -Format o)
     source_files_deleted = 0
     source_directories_modified = 0
