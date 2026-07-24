@@ -78,6 +78,7 @@ def complete_railing_lines(
     *,
     rgb: np.ndarray,
     candidate_mask: np.ndarray,
+    seed_mask: np.ndarray | None = None,
     railing_votes: np.ndarray,
     plant_votes: np.ndarray,
     parameters: LineCompletionParameters | None = None,
@@ -95,6 +96,14 @@ def complete_railing_lines(
     candidate_mask = _validate_vector(
         "candidate_mask", candidate_mask, point_count
     ).astype(bool, copy=False)
+    seed_mask = (
+        candidate_mask
+        if seed_mask is None
+        else _validate_vector("seed_mask", seed_mask, point_count).astype(
+            bool,
+            copy=False,
+        )
+    )
     railing_votes = _validate_vector(
         "railing_votes", railing_votes, point_count
     )
@@ -108,7 +117,7 @@ def complete_railing_lines(
         1.0,
     )
     confirmed = (
-        candidate_mask
+        seed_mask
         & (railing_votes >= parameters.minimum_railing_votes)
         & (railing_votes > plant_votes)
     )
@@ -184,6 +193,7 @@ def complete_railing_lines(
         "schema_version": 1,
         "parameters": asdict(parameters),
         "candidate_point_count": int(candidate_mask.sum()),
+        "seed_candidate_point_count": int(seed_mask.sum()),
         "confirmed_seed_count": int(confirmed.sum()),
         "structural_seed_count": int(structural_seeds.sum()),
         "accepted_line_count": len(line_reports),
@@ -198,6 +208,7 @@ def complete_rigid_line_classes(
     *,
     rgb: np.ndarray,
     candidate_mask: np.ndarray,
+    seed_mask: np.ndarray | None = None,
     class_votes: Mapping[str, np.ndarray],
     class_plant_votes: Mapping[str, np.ndarray],
     parameters: LineCompletionParameters | None = None,
@@ -215,6 +226,7 @@ def complete_rigid_line_classes(
             coordinates,
             rgb=rgb,
             candidate_mask=candidate_mask,
+            seed_mask=seed_mask,
             railing_votes=votes,
             plant_votes=class_plant_votes[class_id],
             parameters=parameters,

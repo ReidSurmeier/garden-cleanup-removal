@@ -451,6 +451,7 @@ def run_full_cleanup(
             coordinates,
             rgb=rgb,
             candidate_mask=floor_keep,
+            seed_mask=semantic_decisions == 4,
             class_votes={
                 class_id: np.load(fused / f"{class_id}-votes.npy")
                 for class_id in rigid_line_classes

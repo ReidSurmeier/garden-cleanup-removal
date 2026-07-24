@@ -139,3 +139,42 @@ def test_planned_fence_uses_rigid_line_completion_not_seed_points_only() -> None
     assert not rejected[-1]
     assert report["classes"]["fence"]["completed_point_count"] == len(fence)
     assert report["completed_point_count"] == len(fence)
+
+
+def test_rejected_fence_evidence_can_complete_remaining_candidate_points() -> None:
+    fence = np.array(
+        [(x, 0.0, 1.0) for x in np.linspace(-5.0, 5.0, 101)],
+        dtype=np.float64,
+    )
+    rgb = np.full((len(fence), 3), 90, dtype=np.uint8)
+    fence_votes = np.zeros(len(fence), dtype=np.uint8)
+    evidence_mask = np.zeros(len(fence), dtype=bool)
+    evidence_mask[::5] = True
+    fence_votes[evidence_mask] = 2
+    candidate_mask = ~evidence_mask
+
+    rejected, report = complete_rigid_line_classes(
+        fence,
+        rgb=rgb,
+        candidate_mask=candidate_mask,
+        seed_mask=evidence_mask,
+        class_votes={"fence": fence_votes},
+        class_plant_votes={
+            "fence": np.zeros(len(fence), dtype=np.uint8)
+        },
+        parameters=LineCompletionParameters(
+            seed_distance=0.03,
+            completion_radius=0.08,
+            minimum_line_seed_points=5,
+            minimum_line_length=1.0,
+            ransac_iterations=500,
+            random_seed=11,
+        ),
+    )
+
+    assert rejected[candidate_mask].all()
+    assert not rejected[evidence_mask].any()
+    assert report["classes"]["fence"]["confirmed_seed_count"] == int(
+        evidence_mask.sum()
+    )
+    assert report["completed_point_count"] == int(candidate_mask.sum())
