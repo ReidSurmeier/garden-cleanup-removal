@@ -12,6 +12,7 @@ from plant_cleanup.plyio import read_cloud
 
 
 BACKGROUND = np.array([18, 18, 22], dtype=np.uint8)
+DEFAULT_MAX_RENDER_POINTS = 1_200_000
 
 
 def _sha256(path: Path) -> str:
@@ -20,6 +21,27 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _sample_cloud_for_render(
+    cloud: np.ndarray,
+    *,
+    max_points: int,
+) -> tuple[np.ndarray, float]:
+    """Bound proof-only raster work without changing full cloud exports."""
+    if max_points < 1:
+        raise ValueError("max_points must be positive")
+    if len(cloud) <= max_points:
+        return cloud, 1.0
+    if max_points == 1:
+        return cloud[[(len(cloud) - 1) // 2]], float(len(cloud))
+    indices = np.linspace(
+        0,
+        len(cloud) - 1,
+        num=max_points,
+        dtype=np.int64,
+    )
+    return cloud[indices], (len(cloud) - 1) / (max_points - 1)
 
 
 def _canonical_frame(coordinates: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -142,9 +164,14 @@ def render_cloud_views(
     size: int = 1200,
     point_radius: int = 1,
     yaw_degrees: tuple[int, ...] | None = None,
+    max_points: int = DEFAULT_MAX_RENDER_POINTS,
 ) -> dict[str, Any]:
     """Render repeatable RGB/depth/source-ID proof views of the PLY contract."""
-    cloud = read_cloud(cloud_path)
+    source_cloud = read_cloud(cloud_path)
+    cloud, sampling_step = _sample_cloud_for_render(
+        source_cloud,
+        max_points=max_points,
+    )
     coordinates = np.column_stack((cloud["x"], cloud["y"], cloud["z"])).astype(
         np.float64
     )
@@ -201,9 +228,11 @@ def render_cloud_views(
         )
     report = {
         "cloud": str(cloud_path),
-        "point_count": int(len(cloud)),
-        "quality_state": "usable" if len(cloud) else "unusable",
-        "quality_reason": None if len(cloud) else "empty_cloud",
+        "point_count": int(len(source_cloud)),
+        "rendered_point_count": int(len(cloud)),
+        "render_sampling_step": sampling_step,
+        "quality_state": "usable" if len(source_cloud) else "unusable",
+        "quality_reason": None if len(source_cloud) else "empty_cloud",
         "frame": {
             "center": center.tolist(),
             "axes": axes.tolist(),
