@@ -142,3 +142,41 @@ def test_canonicalizer_rotates_and_strides_native_points(
     assert cloud["source_index"].tolist() == [0, 2]
     assert cloud["classification"].tolist() == [0, 2]
     assert report["exported_point_count"] == 2
+
+
+def test_canonicalizer_closes_memory_maps_before_atomic_rename(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "native.ply"
+    _write_native(source)
+    output = tmp_path / "canonical.ply"
+    memory_maps: list[np.memmap] = []
+    original_memmap = np.memmap
+    original_rename = Path.rename
+
+    def tracked_memmap(*args, **kwargs):
+        mapped = original_memmap(*args, **kwargs)
+        memory_maps.append(mapped)
+        return mapped
+
+    def windows_style_rename(path: Path, target: Path) -> Path:
+        assert memory_maps
+        assert all(mapped._mmap.closed for mapped in memory_maps)
+        return original_rename(path, target)
+
+    monkeypatch.setattr(np, "memmap", tracked_memmap)
+    monkeypatch.setattr(Path, "rename", windows_style_rename)
+
+    canonicalize_native_cloud(
+        source,
+        output,
+        {
+            "right": [1.0, 0.0, 0.0],
+            "forward": [0.0, 1.0, 0.0],
+            "up": [0.0, 0.0, 1.0],
+            "source": "test",
+        },
+    )
+
+    assert output.is_file()

@@ -214,42 +214,54 @@ def canonicalize_native_cloud(
         shape=(exported_count,),
     )
     target_start = 0
-    for source_start in range(0, count, block_size):
-        source_stop = min(count, source_start + block_size)
-        first = source_start + (-source_start % stride)
-        if first >= source_stop:
-            continue
-        selected = native[first:source_stop:stride]
-        target_stop = target_start + len(selected)
-        positions = np.column_stack(
-            (selected["x"], selected["y"], selected["z"])
-        ).astype(np.float64)
-        normals = np.column_stack(
-            (selected["nx"], selected["ny"], selected["nz"])
-        ).astype(np.float64)
-        transformed = positions @ frame
-        transformed_normals = normals @ frame
-        canonical["x"][target_start:target_stop] = transformed[:, 0]
-        canonical["y"][target_start:target_stop] = transformed[:, 1]
-        canonical["z"][target_start:target_stop] = transformed[:, 2]
-        canonical["nx"][target_start:target_stop] = transformed_normals[:, 0]
-        canonical["ny"][target_start:target_stop] = transformed_normals[:, 1]
-        canonical["nz"][target_start:target_stop] = transformed_normals[:, 2]
-        for channel in ("red", "green", "blue", "classification"):
-            canonical[channel][target_start:target_stop] = selected[channel]
-        canonical["source_index"][target_start:target_stop] = np.arange(
-            first,
-            source_stop,
-            stride,
-            dtype=np.uint32,
-        )
-        target_start = target_stop
-    if target_start != exported_count:
-        raise RuntimeError(
-            f"canonical count mismatch: expected {exported_count}, "
-            f"wrote {target_start}"
-        )
-    canonical.flush()
+    try:
+        for source_start in range(0, count, block_size):
+            source_stop = min(count, source_start + block_size)
+            first = source_start + (-source_start % stride)
+            if first >= source_stop:
+                continue
+            selected = native[first:source_stop:stride]
+            target_stop = target_start + len(selected)
+            positions = np.column_stack(
+                (selected["x"], selected["y"], selected["z"])
+            ).astype(np.float64)
+            normals = np.column_stack(
+                (selected["nx"], selected["ny"], selected["nz"])
+            ).astype(np.float64)
+            transformed = positions @ frame
+            transformed_normals = normals @ frame
+            canonical["x"][target_start:target_stop] = transformed[:, 0]
+            canonical["y"][target_start:target_stop] = transformed[:, 1]
+            canonical["z"][target_start:target_stop] = transformed[:, 2]
+            canonical["nx"][target_start:target_stop] = (
+                transformed_normals[:, 0]
+            )
+            canonical["ny"][target_start:target_stop] = (
+                transformed_normals[:, 1]
+            )
+            canonical["nz"][target_start:target_stop] = (
+                transformed_normals[:, 2]
+            )
+            for channel in ("red", "green", "blue", "classification"):
+                canonical[channel][target_start:target_stop] = (
+                    selected[channel]
+                )
+            canonical["source_index"][target_start:target_stop] = np.arange(
+                first,
+                source_stop,
+                stride,
+                dtype=np.uint32,
+            )
+            target_start = target_stop
+        if target_start != exported_count:
+            raise RuntimeError(
+                f"canonical count mismatch: expected {exported_count}, "
+                f"wrote {target_start}"
+            )
+        canonical.flush()
+    finally:
+        canonical._mmap.close()
+        native._mmap.close()
     if output.exists():
         raise FileExistsError(
             f"refusing to overwrite canonical export: {output}"
