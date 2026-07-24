@@ -23,7 +23,9 @@ from plant_cleanup.dense_semantic import (
     DensePropagationParameters,
     HuggingFaceOneFormerPredictor,
     aggregate_dense_semantic_votes,
+    build_scene_plant_protection,
     propagate_dense_semantic_evidence,
+    select_dense_plant_labels,
 )
 from plant_cleanup.geometry_cleanup import (
     CleanupParameters,
@@ -367,11 +369,23 @@ def run_full_cleanup(
         for class_id, object_class in plan_classes.items()
         if object_class.get("decision_policy") == "ground_surface"
     }
+    ground_class_votes: dict[str, np.ndarray] = {}
+    ground_class_plant_votes: dict[str, np.ndarray] = {}
     if ground_surface_classes:
         if fused_scene is None:
             raise ValueError(
                 "ground-surface completion requires scene evidence"
             )
+        ground_class_votes = {
+            class_id: np.load(fused_scene / f"{class_id}-votes.npy")
+            for class_id in ground_surface_classes
+        }
+        ground_class_plant_votes = {
+            class_id: np.load(
+                fused_scene / f"{class_id}-plant-votes.npy"
+            )
+            for class_id in ground_surface_classes
+        }
         progress("semantic-ground-surface-completion")
         ground_surface_reject, ground_surface_report = (
             complete_ground_surface_classes(
@@ -379,18 +393,8 @@ def run_full_cleanup(
                 normals=normals,
                 candidate_mask=floor_keep,
                 seed_mask=semantic_decisions == 4,
-                class_votes={
-                    class_id: np.load(
-                        fused_scene / f"{class_id}-votes.npy"
-                    )
-                    for class_id in ground_surface_classes
-                },
-                class_plant_votes={
-                    class_id: np.load(
-                        fused_scene / f"{class_id}-plant-votes.npy"
-                    )
-                    for class_id in ground_surface_classes
-                },
+                class_votes=ground_class_votes,
+                class_plant_votes=ground_class_plant_votes,
                 protection_plant_votes=generic_plant_votes,
                 protection_background_votes=generic_background_votes,
             )
@@ -419,10 +423,21 @@ def run_full_cleanup(
             dense_dir,
             predictor=dense_predictor,
             model_id=dense_values["model"],
-            plant_labels=tuple(dense_values["plant_labels"]),
+            plant_labels=select_dense_plant_labels(
+                tuple(dense_values["plant_labels"]),
+                scene_class_ids=set(plan_classes),
+            ),
             background_labels=tuple(
                 dense_values["background_labels"]
             ),
+        )
+        dense_scene_protection = (
+            build_scene_plant_protection(
+                class_votes=ground_class_votes,
+                class_plant_votes=ground_class_plant_votes,
+            )
+            if ground_surface_classes
+            else np.zeros(len(cloud), dtype=bool)
         )
         strict_keep, conservative_keep, propagation_report = (
             propagate_dense_semantic_evidence(
@@ -433,6 +448,7 @@ def run_full_cleanup(
                 background_votes=np.load(
                     dense_dir / "background-votes.npy"
                 ),
+                protection_mask=dense_scene_protection,
                 support_plane_coefficients=tuple(
                     semantic_report["support_plane"]["coefficients"]
                 ),
@@ -446,9 +462,15 @@ def run_full_cleanup(
             dense_dir / "propagation-report.json",
             propagation_report,
         )
+        scene_dense_reject = (
+            floor_keep & ~strict_keep
+            if "turf_ground" in ground_surface_classes
+            else np.zeros(len(cloud), dtype=bool)
+        )
     else:
         strict_keep = floor_keep.copy()
         conservative_keep = floor_keep.copy()
+        scene_dense_reject = np.zeros(len(cloud), dtype=bool)
         dense_report = {
             "status": "skipped",
             "reason": "dense_semantic is not configured",
@@ -578,7 +600,9 @@ def run_full_cleanup(
     final_dir = output_dir / "final"
     final_dir.mkdir()
     final_decisions = semantic_decisions.copy()
-    final_decisions[ground_surface_reject | railing_reject] = 4
+    final_decisions[
+        ground_surface_reject | scene_dense_reject | railing_reject
+    ] = 4
     np.save(final_dir / "decision-codes.npy", final_decisions)
     plant_path = final_dir / "plant-cleaned.ply"
     conservative_path = final_dir / "plant-cleaned-conservative.ply"
@@ -666,6 +690,7 @@ def run_full_cleanup(
         "counts": {
             "floor_candidate": int(floor_keep.sum()),
             "ground_surface_removed": int(ground_surface_reject.sum()),
+            "scene_dense_removed": int(scene_dense_reject.sum()),
             "railing_removed": int((floor_keep & railing_reject).sum()),
             "plant_cleaned": int(final_keep.sum()),
             "plant_conservative": int(final_conservative_keep.sum()),

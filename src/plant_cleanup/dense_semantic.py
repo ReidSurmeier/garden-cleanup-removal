@@ -60,6 +60,50 @@ class HuggingFaceOneFormerPredictor:
         return labels.cpu().numpy(), self._model.config.id2label
 
 
+def select_dense_plant_labels(
+    configured_labels: tuple[str, ...],
+    *,
+    scene_class_ids: set[str],
+) -> tuple[str, ...]:
+    """Resolve labels whose meaning changes under an explicit scene plan."""
+    if "turf_ground" not in scene_class_ids:
+        return configured_labels
+    return tuple(
+        label for label in configured_labels if label != "grass"
+    )
+
+
+def build_scene_plant_protection(
+    *,
+    class_votes: Mapping[str, np.ndarray],
+    class_plant_votes: Mapping[str, np.ndarray],
+    minimum_margin: int = 2,
+) -> np.ndarray:
+    """Protect points strongly identified as plants against a ground class."""
+    if (
+        not class_votes
+        or set(class_votes) != set(class_plant_votes)
+    ):
+        raise ValueError("scene class and plant votes must have matching classes")
+    if minimum_margin < 1:
+        raise ValueError("minimum_margin must be positive")
+    protection: np.ndarray | None = None
+    for class_id in sorted(class_votes):
+        background = np.asarray(class_votes[class_id])
+        plant = np.asarray(class_plant_votes[class_id])
+        if background.ndim != 1 or plant.shape != background.shape:
+            raise ValueError(f"{class_id} votes must be matching vectors")
+        if protection is None:
+            protection = np.zeros(len(background), dtype=bool)
+        elif len(background) != len(protection):
+            raise ValueError("scene classes must cover the same points")
+        protection |= (
+            plant.astype(np.int16) - background.astype(np.int16)
+        ) >= minimum_margin
+    assert protection is not None
+    return protection
+
+
 def aggregate_dense_semantic_votes(
     cloud_path: Path,
     render_dir: Path,
@@ -176,6 +220,7 @@ def propagate_dense_semantic_evidence(
     candidate_mask: np.ndarray,
     plant_votes: np.ndarray,
     background_votes: np.ndarray,
+    protection_mask: np.ndarray | None = None,
     support_plane_coefficients: tuple[float, float, float],
     vertical_span: float,
     parameters: DensePropagationParameters | None = None,
@@ -189,6 +234,11 @@ def propagate_dense_semantic_evidence(
     plant_votes = np.asarray(plant_votes)
     background_votes = np.asarray(background_votes)
     point_count = len(coordinates)
+    protection_mask = (
+        np.zeros(point_count, dtype=bool)
+        if protection_mask is None
+        else np.asarray(protection_mask, dtype=bool)
+    )
     if coordinates.shape != (point_count, 3):
         raise ValueError("coordinates must have shape (point_count, 3)")
     if normals.shape != coordinates.shape:
@@ -197,6 +247,7 @@ def propagate_dense_semantic_evidence(
         ("candidate_mask", candidate_mask),
         ("plant_votes", plant_votes),
         ("background_votes", background_votes),
+        ("protection_mask", protection_mask),
     ):
         if values.shape != (point_count,):
             raise ValueError(f"{name} must have shape ({point_count},)")
@@ -227,6 +278,7 @@ def propagate_dense_semantic_evidence(
             "plant_seed_count": int(plant_seed.sum()),
             "background_seed_count": int(background_seed.sum()),
             "candidate_point_count": int(candidate_mask.sum()),
+            "explicit_protected_point_count": int(protection_mask.sum()),
             "strict_point_count": int(candidate_mask.sum()),
             "conservative_point_count": int(candidate_mask.sum()),
         }
@@ -254,7 +306,11 @@ def propagate_dense_semantic_evidence(
         )
         & (background_votes <= plant_votes)
     )
-    protected = (model_plant & ~ground_like) | structural_protected
+    protected = (
+        (model_plant & ~ground_like)
+        | structural_protected
+        | protection_mask
+    )
 
     def keep_for_factor(factor: float) -> np.ndarray:
         background = (
@@ -278,6 +334,7 @@ def propagate_dense_semantic_evidence(
         "structural_protected_point_count": int(
             structural_protected.sum()
         ),
+        "explicit_protected_point_count": int(protection_mask.sum()),
         "candidate_point_count": int(candidate_mask.sum()),
         "strict_point_count": int(strict.sum()),
         "conservative_point_count": int(conservative.sum()),
