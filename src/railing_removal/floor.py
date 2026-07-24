@@ -36,6 +36,42 @@ class GroundSurfaceCompletionParameters:
     bounds_margin: float = 0.50
     normal_alignment_min: float = 0.55
     strong_plant_margin: int = 2
+    structural_connection_voxel_size: float = 0.20
+    structural_anchor_distance: float = 0.25
+
+
+def _seeded_voxel_components(
+    coordinates: np.ndarray,
+    eligible: np.ndarray,
+    seeds: np.ndarray,
+    *,
+    voxel_size: float,
+) -> np.ndarray:
+    result = np.zeros(len(coordinates), dtype=bool)
+    seed_rows = np.flatnonzero(seeds)
+    if not len(seed_rows):
+        return result
+    result[seed_rows] = True
+    rows = np.flatnonzero(eligible)
+    if not len(rows):
+        return result
+    selected = coordinates[rows]
+    lower = selected.min(axis=0)
+    voxels = np.floor((selected - lower) / voxel_size).astype(np.int32)
+    shape = tuple((voxels.max(axis=0) + 1).tolist())
+    if int(np.prod(shape, dtype=np.int64)) > 100_000_000:
+        return result
+    occupancy = np.zeros(shape, dtype=bool)
+    occupancy[tuple(voxels.T)] = True
+    labels, _ = ndimage.label(
+        occupancy,
+        structure=np.ones((3, 3, 3), dtype=bool),
+    )
+    point_labels = labels[tuple(voxels.T)]
+    seeded_labels = np.unique(point_labels[seeds[rows]])
+    seeded_labels = seeded_labels[seeded_labels != 0]
+    result[rows[np.isin(point_labels, seeded_labels)]] = True
+    return result
 
 
 def _best_seed_plane(
@@ -139,6 +175,12 @@ def complete_ground_surface_classes(
         raise ValueError("max_surfaces must be positive")
     if parameters.ransac_iterations < 1:
         raise ValueError("ransac_iterations must be positive")
+    if parameters.structural_connection_voxel_size <= 0.0:
+        raise ValueError(
+            "structural_connection_voxel_size must be positive"
+        )
+    if parameters.structural_anchor_distance < 0.0:
+        raise ValueError("structural_anchor_distance must not be negative")
 
     normal_lengths = np.linalg.norm(normals, axis=1)
     valid_normals = normal_lengths > 1e-8
@@ -263,8 +305,9 @@ def complete_ground_surface_classes(
                 )
                 distance = np.abs((coordinates - center) @ normal)
                 alignment = np.abs(normalized_normals @ normal)
-                protected_plant_structure = class_strong_plant | (
+                generic_structure_eligible = (
                     generic_strong_plant
+                    & inside
                     & (
                         ~valid_normals
                         | (
@@ -272,6 +315,25 @@ def complete_ground_surface_classes(
                             < parameters.normal_alignment_min
                         )
                     )
+                )
+                generic_structure_anchors = (
+                    generic_structure_eligible
+                    & (
+                        distance
+                        >= parameters.structural_anchor_distance
+                    )
+                )
+                connected_generic_structure = _seeded_voxel_components(
+                    coordinates,
+                    generic_structure_eligible,
+                    generic_structure_anchors,
+                    voxel_size=(
+                        parameters.structural_connection_voxel_size
+                    ),
+                )
+                protected_plant_structure = (
+                    class_strong_plant
+                    | connected_generic_structure
                 )
                 class_exclusive_ground = (
                     object_votes >= parameters.minimum_object_votes
@@ -320,6 +382,19 @@ def complete_ground_surface_classes(
                         ),
                         "newly_completed_point_count": int(
                             newly_completed.sum()
+                        ),
+                        "class_plant_protected_point_count": int(
+                            np.count_nonzero(
+                                candidate_mask
+                                & inside
+                                & class_strong_plant
+                            )
+                        ),
+                        "connected_generic_structure_point_count": int(
+                            connected_generic_structure.sum()
+                        ),
+                        "generic_structure_anchor_point_count": int(
+                            generic_structure_anchors.sum()
                         ),
                     }
                 )

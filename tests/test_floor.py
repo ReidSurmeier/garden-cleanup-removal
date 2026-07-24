@@ -345,7 +345,7 @@ def test_tightly_coplanar_unseen_turf_is_removed_with_generic_root_protection(
     object_votes = np.zeros(len(coordinates), dtype=np.uint8)
     object_votes[evidence_mask] = 2
     protection_plant = np.zeros(len(coordinates), dtype=np.uint8)
-    protection_plant[-2] = 5
+    protection_plant[-2:] = 5
 
     rejected, _ = complete_ground_surface_classes(
         coordinates,
@@ -385,10 +385,17 @@ def test_coplanar_lawn_generic_plant_votes_do_not_protect_the_ground() -> None:
         ],
         dtype=np.float64,
     )
-    root = np.array([(4.0, 3.0, 0.03)], dtype=np.float64)
-    coordinates = np.vstack((ground, root))
+    root_and_trunk = np.array(
+        [
+            (4.0, 3.0, 0.03),
+            (4.0, 3.0, 0.30),
+        ],
+        dtype=np.float64,
+    )
+    coordinates = np.vstack((ground, root_and_trunk))
     normals = np.tile((0.0, 0.0, 1.0), (len(coordinates), 1))
-    normals[-1] = (1.0, 0.0, 0.0)
+    normals[7] = (1.0, 0.0, 0.0)
+    normals[-2:] = (1.0, 0.0, 0.0)
     evidence_mask = np.zeros(len(coordinates), dtype=bool)
     evidence_mask[: len(ground)] = np.array(
         [
@@ -427,4 +434,4 @@ def test_coplanar_lawn_generic_plant_votes_do_not_protect_the_ground() -> None:
     )
 
     assert rejected[: len(ground)][~evidence_mask[: len(ground)]].all()
-    assert not rejected[-1]
+    assert not rejected[-2:].any()
