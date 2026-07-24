@@ -317,12 +317,11 @@ def run_scene_evidence(
             view.get("status") == "segmented"
             for view in sam2_report["views"]
         )
-        if segmented_views < required_segmented_views:
-            observed = "zero" if segmented_views == 0 else str(segmented_views)
-            raise ValueError(
-                f"{class_id} produced {observed} segmented views; "
-                f"required {required_segmented_views}"
-            )
+        quality_state = (
+            "usable"
+            if segmented_views >= required_segmented_views
+            else "insufficient_segmented_views"
+        )
         class_runs[class_id] = sam2_dir
         class_policies[class_id] = decision_policy
         class_reports[class_id] = {
@@ -334,6 +333,7 @@ def run_scene_evidence(
             "background_anchor_limit": background_anchor_limit,
             "required_segmented_views": required_segmented_views,
             "segmented_views": segmented_views,
+            "quality_state": quality_state,
             "clipseg": clipseg_report,
             "sam2": sam2_report,
         }
