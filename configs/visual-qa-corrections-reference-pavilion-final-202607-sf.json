@@ -84,7 +84,7 @@
           "bounds_margin": 0.50,
           "completion_excess_green_max": 10.0,
           "completion_saturation_max": 0.45,
-          "strong_plant_margin": 3
+          "strong_plant_margin": 6
         }
       }
     }
