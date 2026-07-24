@@ -21,6 +21,7 @@ garden-full-cleanup = "railing_removal.full_cli:main"
 garden-metashape-export = "railing_removal.metashape_cli:main"
 garden-adaptive-config = "railing_removal.adaptive_cli:main"
 garden-batch-cleanup = "railing_removal.batch_cli:main"
+garden-batch-review = "railing_removal.batch_review_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
