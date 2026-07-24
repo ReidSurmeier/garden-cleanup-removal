@@ -40,6 +40,7 @@ def run_source_photo_cleanup_batch(
     source_photo_root: Path,
     output_root: Path,
     *,
+    baseline_correction_root: Path | None = None,
     cleanup: Cleanup | None = None,
     progress: Progress | None = None,
 ) -> dict[str, Any]:
@@ -51,6 +52,11 @@ def run_source_photo_cleanup_batch(
         cleanup = run_source_photo_cleanup
     scan_ids = _scan_ids(manifest_path)
     baseline_root = baseline_root.resolve()
+    baseline_correction_root = (
+        baseline_correction_root.resolve()
+        if baseline_correction_root is not None
+        else None
+    )
     source_photo_root = source_photo_root.resolve()
     output_root = output_root.resolve()
     batch_report_path = output_root / "batch-report.json"
@@ -90,7 +96,17 @@ def run_source_photo_cleanup_batch(
                 }
             )
             continue
-        baseline_scan = baseline_root / scan_id
+        corrected_scan = (
+            baseline_correction_root / scan_id
+            if baseline_correction_root is not None
+            else None
+        )
+        baseline_scan = (
+            corrected_scan
+            if corrected_scan is not None
+            and (corrected_scan / "run-report.json").is_file()
+            else baseline_root / scan_id
+        )
         source_photo_scan = source_photo_root / scan_id
         progress(f"[{index}/{len(scan_ids)}] processing {scan_id}")
         try:
@@ -153,6 +169,11 @@ def run_source_photo_cleanup_batch(
         "schema_version": 1,
         "manifest": str(manifest_path.resolve()),
         "baseline_root": str(baseline_root),
+        "baseline_correction_root": (
+            str(baseline_correction_root)
+            if baseline_correction_root is not None
+            else None
+        ),
         "source_photo_root": str(source_photo_root),
         "output_root": str(output_root),
         "source_projects_opened_read_only": True,

@@ -19,12 +19,14 @@ def main() -> None:
     parser.add_argument("baseline_root", type=Path)
     parser.add_argument("source_photo_root", type=Path)
     parser.add_argument("output_root", type=Path)
+    parser.add_argument("--baseline-correction-root", type=Path)
     args = parser.parse_args()
     report = run_source_photo_cleanup_batch(
         args.manifest,
         args.baseline_root,
         args.source_photo_root,
         args.output_root,
+        baseline_correction_root=args.baseline_correction_root,
         progress=lambda message: print(message, flush=True),
     )
     print(json.dumps(report["summary"], indent=2, sort_keys=True))

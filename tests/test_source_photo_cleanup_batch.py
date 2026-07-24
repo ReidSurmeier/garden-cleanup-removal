@@ -130,3 +130,64 @@ def test_source_photo_cleanup_batch_preserves_partial_output(
         "failed": 0,
     }
     assert evidence.read_text(encoding="utf-8") == "preserve"
+
+
+def test_source_photo_cleanup_batch_prefers_additive_baseline_correction(
+    tmp_path: Path,
+) -> None:
+    manifest = tmp_path / "projects.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "projects": [
+                    {"scan_id": "scan-1", "project": "one.psx"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline = tmp_path / "baseline"
+    correction = tmp_path / "correction"
+    corrected_scan = correction / "scan-1"
+    corrected_scan.mkdir(parents=True)
+    (corrected_scan / "run-report.json").write_text(
+        json.dumps({"source_opened_read_only": True}),
+        encoding="utf-8",
+    )
+    semantic_scan = tmp_path / "semantic" / "scan-1"
+    semantic_scan.mkdir(parents=True)
+    (semantic_scan / "report.json").write_text(
+        json.dumps({"project_opened_read_only": True}),
+        encoding="utf-8",
+    )
+    called_with: list[Path] = []
+
+    def cleanup(
+        baseline_scan: Path,
+        source_photo_scan: Path,
+        destination: Path,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        called_with.append(baseline_scan)
+        destination.mkdir()
+        report = {
+            "source_opened_read_only": True,
+            "counts": {"plant_cleaned": 1},
+        }
+        (destination / "run-report.json").write_text(
+            json.dumps(report),
+            encoding="utf-8",
+        )
+        return report
+
+    run_source_photo_cleanup_batch(
+        manifest,
+        baseline,
+        tmp_path / "semantic",
+        tmp_path / "output",
+        baseline_correction_root=correction,
+        cleanup=cleanup,
+    )
+
+    assert called_with == [corrected_scan.resolve()]
