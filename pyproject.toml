@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "garden-railing-removal"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["numpy>=2.0", "plyfile>=1.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+vision = [
+  "pillow>=11.0",
+  "torch>=2.7",
+  "transformers>=4.57,<5",
+]
+
+[project.scripts]
+garden-railing-remove = "railing_removal.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/railing_removal"]
