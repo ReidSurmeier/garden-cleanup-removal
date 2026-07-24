@@ -1,7 +1,10 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[0-9a-f]{7,40}$")]
-    [string]$Commit
+    [string]$Commit,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern("^F:\\3d_scans\\cleanup\\garden-cleanup-removal-[^\\]+\\source-photo-semantic-[^\\]+$")]
+    [string]$SemanticRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +16,6 @@ $baselineRoot = "F:\3d_scans\cleanup\garden-cleanup-removal-631e1a8\full-stride8
 $baselineManifest = Join-Path $baselineRoot "adaptive-profiles\cleanup-manifest.json"
 $baselineOutput = Join-Path $baselineRoot "cleanup"
 $baselineReport = Join-Path $baselineOutput "batch-report.json"
-$semanticRoot = "F:\3d_scans\cleanup\garden-cleanup-removal-d2be9a7\source-photo-semantic-v1"
 $semanticReport = Join-Path $semanticRoot "batch-report.json"
 $versionRoot = "F:\3d_scans\cleanup\garden-cleanup-removal-$commit"
 $correctionRoot = Join-Path $versionRoot "baseline-corrections-v2"
