@@ -23,6 +23,41 @@ class Predictor(Protocol):
         """Return a semantic label image and its label mapping."""
 
 
+def fuse_source_photo_votes(
+    *,
+    source_plant: np.ndarray,
+    source_background: np.ndarray,
+    fallback_plant: np.ndarray,
+    fallback_background: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Prefer calibrated photo votes and use synthetic views only if unseen."""
+
+    arrays = [
+        np.asarray(values)
+        for values in (
+            source_plant,
+            source_background,
+            fallback_plant,
+            fallback_background,
+        )
+    ]
+    if any(values.ndim != 1 for values in arrays):
+        raise ValueError("semantic votes must be vectors")
+    if len({values.shape for values in arrays}) != 1:
+        raise ValueError("semantic vote vectors must have matching shapes")
+    source_plant, source_background, fallback_plant, fallback_background = (
+        arrays
+    )
+    source_seen = (source_plant + source_background) > 0
+    plant = np.where(source_seen, source_plant, fallback_plant)
+    background = np.where(
+        source_seen,
+        source_background,
+        fallback_background,
+    )
+    return plant, background, source_seen
+
+
 def select_diverse_cameras(
     cameras: Sequence[dict[str, Any]],
     *,
