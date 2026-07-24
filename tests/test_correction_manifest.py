@@ -239,7 +239,7 @@ def test_final_reference_review_assigns_only_verified_ground_and_structure(
         "2026-07-16 09.44.32": ["turf_ground"],
         "2026-07-16 13.19.49": ["turf_ground"],
         "2026-07-16 13.20.14": ["turf_ground"],
-        "2026-07-17 12.17.25": ["turf_ground", "fence"],
+        "2026-07-17 12.17.25": ["turf_ground", "railing"],
         "2026-07-17 12.21.21": ["turf_ground"],
     }
     assert set(corrections["assignments"]).isdisjoint(
@@ -254,5 +254,5 @@ def test_final_reference_review_assigns_only_verified_ground_and_structure(
     )
     assert retry["assignments"] == {
         "2026-07-16 09.44.32": ["turf_ground"],
-        "2026-07-17 12.17.25": ["turf_ground", "fence"],
+        "2026-07-17 12.17.25": ["turf_ground", "railing"],
     }

@@ -6,12 +6,12 @@
     ],
     "2026-07-17 12.17.25": [
       "turf_ground",
-      "fence"
+      "railing"
     ]
   },
   "class_overrides": {
     "2026-07-17 12.17.25": {
-      "fence": {
+      "railing": {
         "manual_seed_regions": [
           {
             "view": "orbit-045",
