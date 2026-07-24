@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -191,3 +191,40 @@ def complete_railing_lines(
         "lines": line_reports,
     }
     return rejected, report
+
+
+def complete_rigid_line_classes(
+    coordinates: np.ndarray,
+    *,
+    rgb: np.ndarray,
+    candidate_mask: np.ndarray,
+    class_votes: Mapping[str, np.ndarray],
+    class_plant_votes: Mapping[str, np.ndarray],
+    parameters: LineCompletionParameters | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Complete every planned rigid-line class and preserve class provenance."""
+    if not class_votes:
+        raise ValueError("at least one rigid-line class is required")
+    if set(class_votes) != set(class_plant_votes):
+        raise ValueError("rigid-line object and plant vote classes must match")
+
+    rejected = np.zeros(len(coordinates), dtype=bool)
+    class_reports: dict[str, dict[str, Any]] = {}
+    for class_id, votes in class_votes.items():
+        class_rejected, class_report = complete_railing_lines(
+            coordinates,
+            rgb=rgb,
+            candidate_mask=candidate_mask,
+            railing_votes=votes,
+            plant_votes=class_plant_votes[class_id],
+            parameters=parameters,
+        )
+        rejected |= class_rejected
+        class_reports[class_id] = class_report
+    return rejected, {
+        "schema_version": 1,
+        "strategy": "planned-rigid-line-classes-v1",
+        "class_count": len(class_reports),
+        "completed_point_count": int(rejected.sum()),
+        "classes": class_reports,
+    }

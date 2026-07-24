@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from railing_removal import LineCompletionParameters, complete_railing_lines
+from railing_removal.completion import complete_rigid_line_classes
 
 
 def test_user_can_complete_an_occluded_rail_from_sparse_semantic_seeds() -> None:
@@ -102,3 +103,39 @@ def test_strong_plant_evidence_protects_a_point_crossing_an_accepted_rail() -> N
 
     assert not rejected[protected_id]
     assert rejected.sum() == len(coordinates) - 1
+
+
+def test_planned_fence_uses_rigid_line_completion_not_seed_points_only() -> None:
+    fence = np.array(
+        [(x, 0.0, 1.0) for x in np.linspace(-5.0, 5.0, 101)],
+        dtype=np.float64,
+    )
+    plant = np.array([(0.0, 2.0, 1.0)], dtype=np.float64)
+    coordinates = np.vstack((fence, plant))
+    rgb = np.full((len(coordinates), 3), 90, dtype=np.uint8)
+    rgb[-1] = (40, 150, 35)
+    fence_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    fence_votes[: len(fence) : 5] = 2
+
+    rejected, report = complete_rigid_line_classes(
+        coordinates,
+        rgb=rgb,
+        candidate_mask=np.ones(len(coordinates), dtype=bool),
+        class_votes={"fence": fence_votes},
+        class_plant_votes={
+            "fence": np.zeros(len(coordinates), dtype=np.uint8)
+        },
+        parameters=LineCompletionParameters(
+            seed_distance=0.03,
+            completion_radius=0.08,
+            minimum_line_seed_points=5,
+            minimum_line_length=1.0,
+            ransac_iterations=500,
+            random_seed=11,
+        ),
+    )
+
+    assert rejected[: len(fence)].all()
+    assert not rejected[-1]
+    assert report["classes"]["fence"]["completed_point_count"] == len(fence)
+    assert report["completed_point_count"] == len(fence)

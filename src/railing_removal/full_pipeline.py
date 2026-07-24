@@ -42,7 +42,7 @@ from plant_cleanup.sam2_votes import (
 from plant_cleanup.scene_evidence import run_scene_evidence
 from plant_cleanup.semantic_refine import SemanticParameters, refine_with_semantics
 from plant_cleanup.web_preview import export_web_preview
-from railing_removal.completion import complete_railing_lines
+from railing_removal.completion import complete_rigid_line_classes
 from railing_removal.floor import remove_uncertain_floor
 
 
@@ -406,8 +406,14 @@ def run_full_cleanup(
         }
         propagation_report = dense_report
 
-    if "railing" in plan_classes:
-        progress("railing-semantic-evidence")
+    rigid_line_classes = {
+        class_id: object_class
+        for class_id, object_class in plan_classes.items()
+        if class_id == "railing"
+        or object_class.get("completion_strategy") == "rigid_lines"
+    }
+    if rigid_line_classes:
+        progress("rigid-line-semantic-evidence")
         if scene_evidence is None:
             scene_values = config.get("scene_evidence", {})
             scene_evidence = output_dir / "scene-evidence"
@@ -439,14 +445,22 @@ def run_full_cleanup(
                     scene_values.get("prompt_grid", [3, 6])
                 ),
             )
-        progress("railing-line-completion")
+        progress("rigid-line-completion")
         fused = scene_evidence / "fused"
-        railing_reject, completion_report = complete_railing_lines(
+        railing_reject, completion_report = complete_rigid_line_classes(
             coordinates,
             rgb=rgb,
             candidate_mask=floor_keep,
-            railing_votes=np.load(fused / "railing-votes.npy"),
-            plant_votes=np.load(fused / "railing-plant-votes.npy"),
+            class_votes={
+                class_id: np.load(fused / f"{class_id}-votes.npy")
+                for class_id in rigid_line_classes
+            },
+            class_plant_votes={
+                class_id: np.load(
+                    fused / f"{class_id}-plant-votes.npy"
+                )
+                for class_id in rigid_line_classes
+            },
         )
     else:
         progress("railing-stage-skipped")
@@ -459,7 +473,7 @@ def run_full_cleanup(
             "reason": (
                 "no scene plan supplied"
                 if plan is None
-                else "scene plan contains no railing class"
+                else "scene plan contains no rigid-line class"
             ),
         }
     final_keep = strict_keep & ~railing_reject

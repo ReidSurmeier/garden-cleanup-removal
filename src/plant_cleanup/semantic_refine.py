@@ -378,9 +378,7 @@ def refine_with_semantics(
             coordinates,
             (
                 review_candidate
-                & ground_height_band
                 & (normal_z >= parameters.ground_normal_min)
-                & ~plant_protected
             ),
             ground_surface_seeds,
             voxel_size=parameters.growth_radius,
