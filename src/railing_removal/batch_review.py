@@ -153,3 +153,76 @@ def build_batch_review(batch_report_path: Path) -> dict[str, object]:
         "complete": len(completed),
         "total": len(report["results"]),
     }
+
+
+def build_paginated_review(
+    batch_report_path: Path,
+    output_dir: Path,
+    *,
+    page_size: int = 20,
+) -> dict[str, object]:
+    if page_size < 1:
+        raise ValueError("page_size must be positive")
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        raise FileExistsError(
+            f"paginated review already exists: {output_dir}"
+        )
+    report = json.loads(
+        batch_report_path.resolve().read_text(encoding="utf-8")
+    )
+    completed = [
+        result
+        for result in report["results"]
+        if result["status"] == "complete"
+    ]
+    output_dir.mkdir(parents=True)
+    pages: list[dict[str, object]] = []
+    for offset in range(0, len(completed), page_size):
+        page_results = completed[offset : offset + page_size]
+        number = len(pages) + 1
+        filename = f"page-{number:03d}.jpg"
+        _build_contact_sheet(page_results, output_dir / filename)
+        pages.append(
+            {
+                "number": number,
+                "file": filename,
+                "scan_ids": [
+                    str(result["scan_id"]) for result in page_results
+                ],
+            }
+        )
+    figures = "".join(
+        f'<figure><figcaption>Page {page["number"]}: '
+        f'{html.escape(str(page["scan_ids"][0]))} through '
+        f'{html.escape(str(page["scan_ids"][-1]))}</figcaption>'
+        f'<a href="{page["file"]}"><img src="{page["file"]}" '
+        f'alt="Review page {page["number"]}"></a></figure>'
+        for page in pages
+    )
+    document = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paginated garden cleanup review</title>
+<style>
+body {{ margin: 0; background: #0d0e11; color: #f4f4ef;
+font-family: Inter, system-ui, sans-serif; }}
+main {{ width: min(1400px, 96vw); margin: 28px auto 80px; }}
+figure {{ margin: 24px 0; }}
+figcaption {{ margin-bottom: 8px; color: #c7cad1; }}
+img {{ width: 100%; height: auto; display: block; }}
+</style></head><body><main>
+<h1>Garden cleanup proof pages</h1>
+<p>{len(completed)} completed scans across {len(pages)} pages.</p>
+{figures}
+</main></body></html>
+"""
+    index_path = output_dir / "index.html"
+    index_path.write_text(document, encoding="utf-8")
+    return {
+        "index": str(index_path),
+        "page_count": len(pages),
+        "complete": len(completed),
+        "page_size": page_size,
+        "pages": pages,
+    }
