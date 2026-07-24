@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scan_id": "2026-07-15 17.26.29",
+  "target_intent": "Keep the central tree and coherent shrub group, including trunks, branches, roots, and leaves. Remove the rigid metal railing and fence.",
+  "plant_prompt": "central garden tree, coherent shrubs, leaves, branches, woody trunks and roots",
+  "classes": [
+    {
+      "id": "railing",
+      "prompt": "black metal railing, diagonal fence bars, straight handrail, evenly spaced vertical metal posts and metal top bar",
+      "distractor_prompt": "woody tree branches, curved stems, trunks, roots, shrubs and leaves",
+      "anchor_strategy": "semantic",
+      "decision_policy": "class_exclusive_background",
+      "background_depth_fraction": 0.006,
+      "background_anchor_limit": 12,
+      "required_segmented_views": 1
+    }
+  ]
+}

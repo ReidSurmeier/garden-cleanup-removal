@@ -1,0 +1,106 @@
+{
+  "color_correction": {
+    "gain_max": 1.15,
+    "gain_min": 0.85,
+    "luminance_high_percentile": 99.0,
+    "luminance_low_percentile": 1.0,
+    "neutral_chroma_max": 0.18,
+    "target_black": 6.0,
+    "target_white": 246.0,
+    "tone_scale_max": 1.15,
+    "tone_scale_min": 0.85
+  },
+  "method": {
+    "name": "per-scan scene plan with independent multi-class object evidence",
+    "version": "scene-aware-v5-object-evidence"
+  },
+  "profile": {
+    "robust_z_percentiles": [
+      -6.0290842890739444,
+      21.167884826660156
+    ],
+    "source": "source-stride8-zup.ply",
+    "source_point_count": 1360510,
+    "source_sha256": "857ac7ccee89bb1922a54b4c45ecc290859e35c592b55dda409d78c21a1e42be",
+    "support": {
+      "candidate_points": 644373,
+      "histogram_bins": 160,
+      "selected_bin": 5,
+      "selected_smoothed_count": 22432.4,
+      "significant_peak_count": 5,
+      "strategy": "lowest_significant_smoothed_mode"
+    },
+    "vertical_span": 27.1969691157341
+  },
+  "proof_render_size": 1400,
+  "scene_evidence": {
+    "clipseg_confidence_min": 0.2,
+    "clipseg_margin_min": 0.01,
+    "clipseg_model": "CIDAS/clipseg-rd64-refined",
+    "prompt_grid": [
+      3,
+      6
+    ],
+    "sam2_margin_min": 0.05,
+    "sam2_model": "facebook/sam2-hiera-tiny"
+  },
+  "semantic_refinement": {
+    "excess_green_max": 10.0,
+    "ground_normal_min": 0.8,
+    "ground_seed_height_fraction": 0.35,
+    "growth_radius": 0.3263636293888092,
+    "height_band": 3.2636362938880916,
+    "min_planter_views": 1
+  },
+  "support_estimation": {
+    "strategy": "adaptive-lowest-significant-mode-v1",
+    "support_bin_size": 0.16998105697333812,
+    "support_clearance": 1.087878764629364,
+    "support_height": -5.0357985496521,
+    "support_normal_min": 0.8,
+    "vegetation_excess_green_min": 15.0
+  },
+  "target_classification": {
+    "candidate_excess_green": 5.0,
+    "candidate_saturation": 0.22,
+    "max_target_components": 6,
+    "min_component_seed_points": 4354,
+    "plant_z_max": 21.71182420897484,
+    "plant_z_min": -3.9479197850227354,
+    "preservation_bridge_voxels": 1,
+    "preservation_margin": 1.087878764629364,
+    "seed_excess_green": 30.0,
+    "seed_z_max": 21.71182420897484,
+    "seed_z_min": -3.9479197850227354,
+    "uncertain_dilation_voxels": 1,
+    "voxel_size": 0.18131312743822733
+  },
+  "vision": {
+    "clipseg_confidence_min": 0.25,
+    "clipseg_margin_min": 0.02,
+    "clipseg_model": "CIDAS/clipseg-rd64-refined",
+    "orbit_degrees": [
+      0,
+      45,
+      90,
+      135,
+      180,
+      225,
+      270,
+      315
+    ],
+    "prompt_grid": [
+      3,
+      6
+    ],
+    "prompt_margin_min": 0.08,
+    "prompts": [
+      "plants and leaves",
+      "concrete planter wall or pavement",
+      "floating reconstruction noise"
+    ],
+    "render_point_radius": 1,
+    "render_size": 1000,
+    "sam2_model": "facebook/sam2-hiera-tiny"
+  }
+}

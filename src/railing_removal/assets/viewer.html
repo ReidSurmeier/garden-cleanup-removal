@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Garden cleanup review</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0d0e11; color: #f4f4ef; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+    canvas:active { cursor: grabbing; }
+    .panel { position: fixed; z-index: 2; top: 14px; left: 14px; width: min(390px, calc(100% - 28px)); padding: 14px; border: 1px solid #343942; border-radius: 14px; background: rgba(18, 20, 24, .9); backdrop-filter: blur(14px); }
+    h1 { font-size: 19px; margin: 0 0 5px; }
+    p { margin: 0 0 11px; color: #b8bbc2; font-size: 13px; line-height: 1.4; }
+    .presets { display: flex; flex-wrap: wrap; gap: 7px; }
+    button, a { color: #f4f4ef; border: 1px solid #424852; background: #24272d; border-radius: 9px; padding: 8px 10px; font: inherit; text-decoration: none; cursor: pointer; }
+    button.active { color: #111; background: #b6ef63; border-color: #b6ef63; font-weight: 700; }
+    .row { display: flex; align-items: center; gap: 10px; margin-top: 11px; }
+    input { flex: 1; accent-color: #b6ef63; }
+    .status { margin-top: 9px; color: #9da2ab; font-size: 12px; }
+    .help { position: fixed; z-index: 2; right: 14px; bottom: 14px; padding: 9px 11px; background: rgba(18, 20, 24, .82); border: 1px solid #343942; border-radius: 10px; color: #b8bbc2; font-size: 12px; }
+    @media (max-width: 680px) { .panel { padding: 11px; } .help { left: 14px; right: auto; } }
+  </style>
+</head>
+<body>
+  <canvas id="viewer"></canvas>
+  <section class="panel">
+    <h1>Garden cleanup review</h1>
+    <p id="summary">Loading point counts…</p>
+    <div class="presets">
+      <button data-preset="plant" class="active">Current railing candidate</button>
+      <button data-preset="previous">Before railing pass</button>
+      <button data-preset="uncertain">Uncertain boundary</button>
+      <button data-preset="source">Full source</button>
+      <button data-preset="rejected">All rejected points</button>
+      <button data-preset="decision">Decision overlay</button>
+    </div>
+    <div class="row"><label for="size">Point size</label><input id="size" type="range" min="1" max="8" value="3" step="0.25"></div>
+    <div class="row"><button id="reset">Reset view</button></div>
+    <div class="status" id="status">Loading manifest…</div>
+  </section>
+  <div class="help">Drag to orbit · wheel/pinch to zoom · double-click to reset</div>
+  <script>
+    const canvas = document.querySelector('#viewer');
+    const gl = canvas.getContext('webgl', { antialias: false, powerPreference: 'high-performance' });
+    if (!gl) document.querySelector('#status').textContent = 'WebGL is not available in this browser.';
+
+    const vertexSource = `
+      attribute vec3 aPosition;
+      attribute vec4 aColor;
+      uniform vec3 uCenter;
+      uniform float uScale;
+      uniform vec3 uEye;
+      uniform vec3 uRight;
+      uniform vec3 uUp;
+      uniform vec3 uForward;
+      uniform float uAspect;
+      uniform float uTanHalfFov;
+      uniform float uPointSize;
+      uniform vec3 uTint;
+      uniform float uTintMix;
+      varying vec4 vColor;
+      void main() {
+        vec3 world = (aPosition - uCenter) * uScale;
+        vec3 delta = world - uEye;
+        float depth = dot(delta, uForward);
+        float x = dot(delta, uRight);
+        float y = dot(delta, uUp);
+        float nearPlane = 0.01;
+        float farPlane = 20.0;
+        float clipZ = ((farPlane + nearPlane) / (farPlane - nearPlane)) * depth
+                    - (2.0 * farPlane * nearPlane) / (farPlane - nearPlane);
+        gl_Position = vec4(x / (uTanHalfFov * uAspect), y / uTanHalfFov, clipZ, depth);
+        gl_PointSize = clamp(uPointSize * 2.2 / max(depth, 0.01), 1.0, 9.0);
+        vColor = vec4(mix(aColor.rgb, uTint, uTintMix), 1.0);
+      }`;
+    const fragmentSource = `
+      precision mediump float;
+      varying vec4 vColor;
+      void main() {
+        vec2 point = gl_PointCoord * 2.0 - 1.0;
+        if (dot(point, point) > 1.0) discard;
+        gl_FragColor = vColor;
+      }`;
+
+    function compile(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    const program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSource));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSource));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+
+    const attributes = {
+      position: gl.getAttribLocation(program, 'aPosition'),
+      color: gl.getAttribLocation(program, 'aColor')
+    };
+    const uniforms = {};
+    ['uCenter','uScale','uEye','uRight','uUp','uForward','uAspect','uTanHalfFov','uPointSize','uTint','uTintMix']
+      .forEach(name => uniforms[name] = gl.getUniformLocation(program, name));
+
+    const state = { azimuth: 0, elevation: .15, distance: 2.8, pointSize: 3, layers: {}, visible: ['plant'], manifest: null };
+    const layerStyle = {
+      source: { tint: [1, 1, 1], mix: 0 },
+      previous: { tint: [1, 1, 1], mix: 0 },
+      conservative: { tint: [.55, 1, .25], mix: 0 },
+      plant: { tint: [.55, 1, .25], mix: 0 },
+      recovered: { tint: [1, .58, .08], mix: .72 },
+      uncertain: { tint: [1, .82, .12], mix: .62 },
+      rejected: { tint: [1, .18, .25], mix: 0 }
+    };
+    const presets = {
+      conservative: ['conservative'], plant: ['plant'], previous: ['previous'], recovered: ['recovered'], uncertain: ['uncertain'], source: ['source'], rejected: ['rejected'], decision: ['plant', 'rejected']
+    };
+
+    const normalize = v => { const n = Math.hypot(...v); return v.map(x => x / n); };
+    const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    const subtract = (a, b) => a.map((x, index) => x - b[index]);
+
+    function resetView() { state.azimuth = 0; state.elevation = .15; state.distance = 2.8; }
+    document.querySelector('#reset').addEventListener('click', resetView);
+    canvas.addEventListener('dblclick', resetView);
+    document.querySelector('#size').addEventListener('input', event => state.pointSize = Number(event.target.value));
+
+    async function loadLayer(name) {
+      if (state.layers[name]) return;
+      const status = document.querySelector('#status');
+      status.textContent = `Loading ${name}…`;
+      const layer = state.manifest.layers[name];
+      const response = await fetch(`${layer.url}?sha256=${layer.sha256}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Could not load ${name}: ${response.status}`);
+      const data = await response.arrayBuffer();
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      state.layers[name] = { buffer, count: state.manifest.layers[name].preview_point_count };
+      const loaded = Object.values(state.layers).reduce((total, layer) => total + layer.count, 0);
+      status.textContent = `${loaded.toLocaleString()} preview points loaded · full exports remain unchanged`;
+    }
+
+    async function setPreset(name) {
+      state.visible = presets[name];
+      document.querySelectorAll('[data-preset]').forEach(button => button.classList.toggle('active', button.dataset.preset === name));
+      await Promise.all(state.visible.map(loadLayer));
+    }
+    document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click', () => setPreset(button.dataset.preset)));
+
+    const pointers = new Map();
+    let lastPinch = null;
+    canvas.addEventListener('pointerdown', event => { canvas.setPointerCapture(event.pointerId); pointers.set(event.pointerId, [event.clientX, event.clientY]); });
+    canvas.addEventListener('pointermove', event => {
+      if (!pointers.has(event.pointerId)) return;
+      const previous = pointers.get(event.pointerId);
+      pointers.set(event.pointerId, [event.clientX, event.clientY]);
+      if (pointers.size === 1) {
+        state.azimuth -= (event.clientX - previous[0]) * .006;
+        state.elevation = Math.max(-1.4, Math.min(1.4, state.elevation + (event.clientY - previous[1]) * .006));
+      } else if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (lastPinch) state.distance = Math.max(.45, Math.min(10, state.distance * lastPinch / pinch));
+        lastPinch = pinch;
+      }
+    });
+    const release = event => { pointers.delete(event.pointerId); if (pointers.size < 2) lastPinch = null; };
+    canvas.addEventListener('pointerup', release); canvas.addEventListener('pointercancel', release);
+    canvas.addEventListener('wheel', event => { event.preventDefault(); state.distance = Math.max(.45, Math.min(10, state.distance * Math.exp(event.deltaY * .001))); }, { passive: false });
+
+    function resize() {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.floor(canvas.clientWidth * ratio), height = Math.floor(canvas.clientHeight * ratio);
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; gl.viewport(0, 0, width, height); }
+    }
+    function draw() {
+      resize();
+      gl.clearColor(.05, .055, .067, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+      if (state.manifest) {
+        const bounds = state.manifest.bounds;
+        const center = bounds.min.map((value, index) => (value + bounds.max[index]) / 2);
+        const extent = Math.max(...bounds.max.map((value, index) => value - bounds.min[index]));
+        const eye = [
+          state.distance * Math.sin(state.azimuth) * Math.cos(state.elevation),
+          state.distance * Math.cos(state.azimuth) * Math.cos(state.elevation),
+          state.distance * Math.sin(state.elevation)
+        ];
+        const forward = normalize(eye.map(value => -value));
+        const right = normalize(cross([0, 0, 1], forward));
+        const up = normalize(cross(forward, right));
+        gl.uniform3fv(uniforms.uCenter, center); gl.uniform1f(uniforms.uScale, 2 / extent);
+        gl.uniform3fv(uniforms.uEye, eye); gl.uniform3fv(uniforms.uRight, right); gl.uniform3fv(uniforms.uUp, up); gl.uniform3fv(uniforms.uForward, forward);
+        gl.uniform1f(uniforms.uAspect, canvas.width / canvas.height); gl.uniform1f(uniforms.uTanHalfFov, Math.tan(Math.PI / 6)); gl.uniform1f(uniforms.uPointSize, state.pointSize);
+        for (const name of state.visible) {
+          const layer = state.layers[name]; if (!layer) continue;
+          const style = layerStyle[name]; gl.uniform3fv(uniforms.uTint, style.tint); gl.uniform1f(uniforms.uTintMix, name === 'rejected' && state.visible.length > 1 ? .7 : style.mix);
+          gl.bindBuffer(gl.ARRAY_BUFFER, layer.buffer);
+          gl.enableVertexAttribArray(attributes.position); gl.vertexAttribPointer(attributes.position, 3, gl.FLOAT, false, 16, 0);
+          gl.enableVertexAttribArray(attributes.color); gl.vertexAttribPointer(attributes.color, 4, gl.UNSIGNED_BYTE, true, 16, 12);
+          gl.drawArrays(gl.POINTS, 0, layer.count);
+        }
+      }
+      requestAnimationFrame(draw);
+    }
+
+    fetch('viewer-data/manifest.json', { cache: 'no-store' }).then(response => response.json()).then(manifest => {
+      state.manifest = manifest;
+      const before = manifest.layers.previous.preview_point_count.toLocaleString();
+      const after = manifest.layers.plant.preview_point_count.toLocaleString();
+      document.querySelector('#summary').textContent = `Before railing pass: ${before} points · cleaned plant: ${after} points.`;
+      setPreset('plant');
+    }).catch(error => document.querySelector('#status').textContent = error.message);
+    draw();
+  </script>
+</body>
+</html>

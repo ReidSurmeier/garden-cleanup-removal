@@ -14,6 +14,8 @@ Python 3.13
 
 NumPy
 
+SciPy
+
 plyfile
 
 Hugging Face Transformers

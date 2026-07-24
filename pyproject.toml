@@ -6,21 +6,22 @@ build-backend = "hatchling.build"
 name = "garden-railing-removal"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["numpy>=2.0", "plyfile>=1.1"]
+dependencies = ["numpy>=2.0", "pillow>=11.0", "plyfile>=1.1", "scipy>=1.15"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 vision = [
-  "pillow>=11.0",
   "torch>=2.7",
   "transformers>=4.57,<5",
 ]
 
 [project.scripts]
 garden-railing-remove = "railing_removal.cli:main"
+garden-full-cleanup = "railing_removal.full_cli:main"
+garden-metashape-export = "railing_removal.metashape_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/railing_removal"]
+packages = ["src/railing_removal", "src/plant_cleanup"]
