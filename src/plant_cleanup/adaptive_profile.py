@@ -38,7 +38,14 @@ def _lowest_significant_support(
     )
     heights = z[candidate]
     if len(heights) < 100:
-        raise ValueError("too few horizontal non-vegetation points for support")
+        return float(robust_low), {
+            "strategy": "robust_low_percentile_fallback",
+            "candidate_points": int(len(heights)),
+            "histogram_bins": bins,
+            "selected_bin": None,
+            "selected_smoothed_count": None,
+            "significant_peak_count": 0,
+        }
     counts, edges = np.histogram(
         heights,
         bins=bins,

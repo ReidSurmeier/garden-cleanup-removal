@@ -89,3 +89,27 @@ def test_adaptive_config_is_scale_invariant_and_source_bound(
         assert ratio == pytest.approx(10.0, rel=0.05)
     assert "focus_x_max" not in small_config["target_classification"]
     assert "focus_y_max" not in small_config["target_classification"]
+
+
+def test_adaptive_config_falls_back_without_horizontal_support(
+    tmp_path: Path,
+) -> None:
+    base = json.loads(BASE_CONFIG.read_text(encoding="utf-8"))
+    source = tmp_path / "vertical-only.ply"
+    _write_scaled_scene(source, 1.0)
+    cloud = np.frombuffer(
+        source.read_bytes().split(b"end_header\n", 1)[1],
+        dtype=VERTEX_DTYPE,
+    ).copy()
+    cloud["nz"] = 0.0
+    header = source.read_bytes().split(b"end_header\n", 1)[0]
+    source.write_bytes(header + b"end_header\n" + cloud.tobytes())
+
+    config = build_adaptive_config(source, base)
+
+    assert config["profile"]["support"]["strategy"] == (
+        "robust_low_percentile_fallback"
+    )
+    assert config["support_estimation"]["support_height"] == pytest.approx(
+        config["profile"]["robust_z_percentiles"][0]
+    )
