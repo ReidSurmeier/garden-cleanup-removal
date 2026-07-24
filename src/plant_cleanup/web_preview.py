@@ -47,6 +47,14 @@ def export_web_preview(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     preview.tofile(output_path)
     positions = preview["position"]
+    bounds = (
+        {
+            "min": positions.min(axis=0).astype(float).tolist(),
+            "max": positions.max(axis=0).astype(float).tolist(),
+        }
+        if len(positions)
+        else None
+    )
     return {
         "source": str(source_path.resolve()),
         "output": str(output_path),
@@ -56,8 +64,5 @@ def export_web_preview(
         "record_bytes": int(WEB_DTYPE.itemsize),
         "bytes": output_path.stat().st_size,
         "sha256": _sha256(output_path),
-        "bounds": {
-            "min": positions.min(axis=0).astype(float).tolist(),
-            "max": positions.max(axis=0).astype(float).tolist(),
-        },
+        "bounds": bounds,
     }

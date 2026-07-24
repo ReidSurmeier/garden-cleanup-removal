@@ -89,12 +89,19 @@ def _build_viewer(
         report = export_web_preview(path, viewer_data / f"{name}.bin")
         report["url"] = f"viewer-data/{name}.bin"
         reports[name] = report
+    nonempty_reports = [
+        report
+        for report in reports.values()
+        if report["bounds"] is not None
+    ]
+    if not nonempty_reports:
+        raise ValueError("viewer requires at least one nonempty layer")
     combined_min = [
-        min(report["bounds"]["min"][axis] for report in reports.values())
+        min(report["bounds"]["min"][axis] for report in nonempty_reports)
         for axis in range(3)
     ]
     combined_max = [
-        max(report["bounds"]["max"][axis] for report in reports.values())
+        max(report["bounds"]["max"][axis] for report in nonempty_reports)
         for axis in range(3)
     ]
     manifest = {
