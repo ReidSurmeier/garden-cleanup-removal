@@ -246,6 +246,50 @@ def _predict_anchor_union(
     return union, float(np.mean(scores)), len(scores)
 
 
+def _try_predict_competing_masks(
+    predictor: Predictor,
+    image: Image.Image,
+    *,
+    planter_anchors: list[list[float]],
+    plant_anchors: list[list[float]],
+) -> tuple[
+    tuple[np.ndarray, float, int, np.ndarray, float, int] | None,
+    dict[str, str],
+]:
+    """Convert one unusable SAM2 view into explicit conservative evidence."""
+    try:
+        planter_mask, planter_iou, planter_successes = (
+            _predict_anchor_union(
+                predictor,
+                image,
+                planter_anchors,
+                plant_anchors,
+            )
+        )
+        plant_mask, plant_iou, plant_successes = _predict_anchor_union(
+            predictor,
+            image,
+            plant_anchors,
+            planter_anchors,
+        )
+    except ValueError as error:
+        return None, {
+            "status": "segmentation_failed",
+            "error": str(error),
+        }
+    return (
+        (
+            planter_mask,
+            planter_iou,
+            planter_successes,
+            plant_mask,
+            plant_iou,
+            plant_successes,
+        ),
+        {"status": "segmented"},
+    )
+
+
 def aggregate_sam2_votes(
     cloud_path: Path,
     render_dir: Path,
@@ -366,12 +410,30 @@ def aggregate_sam2_votes(
             positive, planter_margin, limit=background_anchor_limit
         )
         plant_anchors = _spread_anchors(negative, plant_margin)
-        planter_mask, planter_iou, planter_successes = _predict_anchor_union(
-            predictor, image, planter_anchors, plant_anchors
+        prediction, prediction_report = _try_predict_competing_masks(
+            predictor,
+            image,
+            planter_anchors=planter_anchors,
+            plant_anchors=plant_anchors,
         )
-        plant_mask, plant_iou, plant_successes = _predict_anchor_union(
-            predictor, image, plant_anchors, planter_anchors
-        )
+        if prediction is None:
+            view_reports.append(
+                {
+                    "view": name,
+                    **prediction_report,
+                    "positive_prompt_count": len(planter_anchors),
+                    "negative_prompt_count": len(plant_anchors),
+                }
+            )
+            continue
+        (
+            planter_mask,
+            planter_iou,
+            planter_successes,
+            plant_mask,
+            plant_iou,
+            plant_successes,
+        ) = prediction
         planter_mask = np.asarray(planter_mask, dtype=bool)
         plant_mask = np.asarray(plant_mask, dtype=bool)
         expected_mask_shape = (image.height, image.width)
