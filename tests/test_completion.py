@@ -145,6 +145,54 @@ def test_planned_fence_uses_rigid_line_completion_not_seed_points_only() -> None
     assert report["completed_point_count"] == len(fence)
 
 
+def test_each_rigid_class_can_use_source_verified_line_parameters() -> None:
+    long_rail = np.array(
+        [(x, 0.0, 1.0) for x in np.linspace(-2.0, 2.0, 41)],
+        dtype=np.float64,
+    )
+    short_post = np.array(
+        [(3.0, 0.0, z) for z in np.linspace(0.0, 0.5, 11)],
+        dtype=np.float64,
+    )
+    coordinates = np.vstack((long_rail, short_post))
+    rgb = np.full((len(coordinates), 3), 90, dtype=np.uint8)
+    rail_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    post_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    rail_votes[: len(long_rail) : 5] = 2
+    post_votes[len(long_rail) :: 5] = 2
+
+    rejected, report = complete_rigid_line_classes(
+        coordinates,
+        rgb=rgb,
+        candidate_mask=np.ones(len(coordinates), dtype=bool),
+        class_votes={"rail": rail_votes, "post": post_votes},
+        class_plant_votes={
+            "rail": np.zeros(len(coordinates), dtype=np.uint8),
+            "post": np.zeros(len(coordinates), dtype=np.uint8),
+        },
+        parameters=LineCompletionParameters(
+            minimum_line_seed_points=5,
+            minimum_line_length=1.0,
+            seed_distance=0.03,
+            completion_radius=0.08,
+            ransac_iterations=500,
+        ),
+        parameters_by_class={
+            "post": LineCompletionParameters(
+                minimum_line_seed_points=2,
+                minimum_line_length=0.3,
+                seed_distance=0.03,
+                completion_radius=0.08,
+                ransac_iterations=500,
+            )
+        },
+    )
+
+    assert rejected.all()
+    assert report["classes"]["rail"]["accepted_line_count"] == 1
+    assert report["classes"]["post"]["accepted_line_count"] == 1
+
+
 def test_rejected_fence_evidence_can_complete_remaining_candidate_points() -> None:
     fence = np.array(
         [(x, 0.0, 1.0) for x in np.linspace(-5.0, 5.0, 101)],

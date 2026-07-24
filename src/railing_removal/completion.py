@@ -228,12 +228,24 @@ def complete_rigid_line_classes(
     class_votes: Mapping[str, np.ndarray],
     class_plant_votes: Mapping[str, np.ndarray],
     parameters: LineCompletionParameters | None = None,
+    parameters_by_class: Mapping[
+        str, LineCompletionParameters
+    ] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Complete every planned rigid-line class and preserve class provenance."""
     if not class_votes:
         raise ValueError("at least one rigid-line class is required")
     if set(class_votes) != set(class_plant_votes):
         raise ValueError("rigid-line object and plant vote classes must match")
+    if parameters_by_class is not None:
+        unknown_parameter_classes = set(parameters_by_class) - set(
+            class_votes
+        )
+        if unknown_parameter_classes:
+            raise ValueError(
+                "rigid-line parameters reference unknown class: "
+                f"{sorted(unknown_parameter_classes)[0]}"
+            )
 
     rejected = np.zeros(len(coordinates), dtype=bool)
     class_reports: dict[str, dict[str, Any]] = {}
@@ -245,7 +257,11 @@ def complete_rigid_line_classes(
             seed_mask=seed_mask,
             railing_votes=votes,
             plant_votes=class_plant_votes[class_id],
-            parameters=parameters,
+            parameters=(
+                parameters_by_class.get(class_id, parameters)
+                if parameters_by_class is not None
+                else parameters
+            ),
         )
         rejected |= class_rejected
         class_reports[class_id] = class_report

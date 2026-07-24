@@ -155,12 +155,20 @@ def build_targeted_correction_manifest(
                     f"invalid {class_id} override for {scan_id}"
                 )
             unknown_override_keys = set(override) - {
-                "manual_seed_regions"
+                "manual_seed_regions",
+                "line_completion_parameters",
             }
             if unknown_override_keys:
                 raise ValueError(
                     "unsupported class override: "
                     f"{sorted(unknown_override_keys)[0]}"
+                )
+            if "line_completion_parameters" in override and not isinstance(
+                override["line_completion_parameters"],
+                dict,
+            ):
+                raise ValueError(
+                    "line_completion_parameters must be an object"
                 )
             object_class.update(copy.deepcopy(override))
             object_class["id"] = class_id

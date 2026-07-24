@@ -46,6 +46,7 @@ from plant_cleanup.scene_evidence import run_scene_evidence
 from plant_cleanup.semantic_refine import SemanticParameters, refine_with_semantics
 from plant_cleanup.web_preview import export_web_preview
 from railing_removal.completion import (
+    LineCompletionParameters,
     complete_rigid_line_classes,
     complete_rigid_surface_classes,
 )
@@ -562,6 +563,15 @@ def run_full_cleanup(
         }
         if rigid_line_classes:
             progress("rigid-line-completion")
+            line_parameters_by_class = {
+                class_id: LineCompletionParameters(
+                    **object_class.get(
+                        "line_completion_parameters",
+                        {},
+                    )
+                )
+                for class_id, object_class in rigid_line_classes.items()
+            }
             line_reject, line_report = complete_rigid_line_classes(
                 coordinates,
                 rgb=rgb,
@@ -575,6 +585,7 @@ def run_full_cleanup(
                     class_id: completion_class_plant_votes[class_id]
                     for class_id in rigid_line_classes
                 },
+                parameters_by_class=line_parameters_by_class,
             )
             railing_reject |= line_reject
         if rigid_surface_classes:

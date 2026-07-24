@@ -177,7 +177,11 @@ def test_builds_targeted_visual_qa_corrections_with_object_scene_plans(
                                 "view": "orbit-000",
                                 "bounds": [0.1, 0.2, 0.3, 0.4],
                             }
-                        ]
+                        ],
+                        "line_completion_parameters": {
+                            "minimum_line_seed_points": 6,
+                            "minimum_line_length": 0.35,
+                        },
                     }
                 }
             },
@@ -205,6 +209,10 @@ def test_builds_targeted_visual_qa_corrections_with_object_scene_plans(
     assert plan["classes"][0]["manual_seed_regions"][0]["view"] == (
         "orbit-000"
     )
+    assert plan["classes"][0]["line_completion_parameters"] == {
+        "minimum_line_seed_points": 6,
+        "minimum_line_length": 0.35,
+    }
     assert json.loads(output.read_text(encoding="utf-8")) == result
 
 
