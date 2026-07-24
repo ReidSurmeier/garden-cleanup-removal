@@ -294,9 +294,10 @@ def refine_with_semantics(
                 & (votes > paired_plant)
             )
         elif policy == "ground_surface":
+            paired_plant = scene_plant_votes.get(class_id, plant_votes)
             class_background = (
                 (votes >= parameters.min_planter_views)
-                & (votes >= plant_votes)
+                & (votes >= paired_plant)
                 & (normal_z >= parameters.ground_normal_min)
             )
         else:

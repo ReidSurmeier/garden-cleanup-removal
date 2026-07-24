@@ -41,16 +41,6 @@
       "background_anchor_limit": 12,
       "required_segmented_views": 1
     },
-    "pergola": {
-      "prompt": "rigid wooden pergola, garden gazebo, straight timber roof beams, square support posts and horizontal wooden rails",
-      "distractor_prompt": "woody trunks, curved branches, exposed roots, stems, shrubs, leaves and flowers",
-      "anchor_strategy": "semantic",
-      "decision_policy": "class_exclusive_background",
-      "background_depth_fraction": 0.006,
-      "background_anchor_limit": 12,
-      "completion_strategy": "rigid_lines",
-      "required_segmented_views": 1
-    },
     "railing": {
       "prompt": "rigid metal railing, straight handrail, diagonal fence bars, evenly spaced vertical metal posts and metal top bar",
       "distractor_prompt": "woody tree branches, curved stems, trunks, exposed roots, shrubs and leaves",
@@ -179,7 +169,7 @@
     ],
     "2026-07-17 12.17.25": [
       "turf_ground",
-      "pergola"
+      "fence"
     ],
     "2026-07-17 12.21.21": [
       "turf_ground"

@@ -193,7 +193,7 @@ def test_builds_targeted_visual_qa_corrections_with_object_scene_plans(
     assert json.loads(output.read_text(encoding="utf-8")) == result
 
 
-def test_final_reference_review_assigns_only_verified_ground_and_pergola(
+def test_final_reference_review_assigns_only_verified_ground_and_structure(
 ) -> None:
     repository = Path(__file__).resolve().parents[1]
     catalog = json.loads(
@@ -211,15 +211,13 @@ def test_final_reference_review_assigns_only_verified_ground_and_pergola(
         ).read_text(encoding="utf-8")
     )
 
-    assert catalog["classes"]["pergola"]["completion_strategy"] == (
-        "rigid_lines"
-    )
+    assert catalog["classes"]["fence"]["completion_strategy"] == "rigid_surface"
     assert corrections["assignments"] == {
         "2026-07-15 13.31.42": ["turf_ground"],
         "2026-07-16 09.44.32": ["turf_ground"],
         "2026-07-16 13.19.49": ["turf_ground"],
         "2026-07-16 13.20.14": ["turf_ground"],
-        "2026-07-17 12.17.25": ["turf_ground", "pergola"],
+        "2026-07-17 12.17.25": ["turf_ground", "fence"],
         "2026-07-17 12.21.21": ["turf_ground"],
     }
     assert set(corrections["assignments"]).isdisjoint(
