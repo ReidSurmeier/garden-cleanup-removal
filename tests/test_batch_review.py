@@ -92,3 +92,41 @@ def test_paginated_review_builds_bounded_contact_sheets(
 
     with pytest.raises(FileExistsError, match="already exists"):
         build_paginated_review(report_path, output, page_size=2)
+
+
+def test_paginated_review_can_render_higher_resolution_proofs(
+    tmp_path: Path,
+) -> None:
+    scan_output = tmp_path / "cleanup" / "scan-0"
+    for layer in ("source", "plant", "conservative", "rejected"):
+        destination = scan_output / "final" / f"render-{layer}"
+        destination.mkdir(parents=True)
+        Image.new("RGB", (960, 720), (20, 80, 40)).save(
+            destination / "front-rgb.png"
+        )
+    report_path = tmp_path / "batch-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "scan_id": "scan-0",
+                        "status": "complete",
+                        "output": str(scan_output),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_paginated_review(
+        report_path,
+        tmp_path / "high-resolution-pages",
+        page_size=1,
+        render_scale=1.5,
+    )
+
+    with Image.open(tmp_path / "high-resolution-pages" / "page-001.jpg") as page:
+        assert page.size == (1920, 423)
+    assert report["render_scale"] == 1.5

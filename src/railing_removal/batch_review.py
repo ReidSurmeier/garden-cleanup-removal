@@ -29,10 +29,14 @@ def _proof_path(scan_output: Path, layer: str) -> Path:
 def _build_contact_sheet(
     completed: list[dict[str, object]],
     destination: Path,
+    *,
+    render_scale: float = 1.0,
 ) -> None:
-    cell_width = 320
-    image_height = 240
-    header_height = 42
+    if render_scale <= 0:
+        raise ValueError("render_scale must be positive")
+    cell_width = round(320 * render_scale)
+    image_height = round(240 * render_scale)
+    header_height = round(42 * render_scale)
     row_height = header_height + image_height
     sheet = Image.new(
         "RGB",
@@ -161,9 +165,12 @@ def build_paginated_review(
     output_dir: Path,
     *,
     page_size: int = 20,
+    render_scale: float = 1.0,
 ) -> dict[str, object]:
     if page_size < 1:
         raise ValueError("page_size must be positive")
+    if render_scale <= 0:
+        raise ValueError("render_scale must be positive")
     output_dir = output_dir.resolve()
     if output_dir.exists():
         raise FileExistsError(
@@ -183,7 +190,11 @@ def build_paginated_review(
         page_results = completed[offset : offset + page_size]
         number = len(pages) + 1
         filename = f"page-{number:03d}.jpg"
-        _build_contact_sheet(page_results, output_dir / filename)
+        _build_contact_sheet(
+            page_results,
+            output_dir / filename,
+            render_scale=render_scale,
+        )
         pages.append(
             {
                 "number": number,
@@ -250,5 +261,6 @@ text-decoration: none; border-radius: 3px; }}
         "page_count": len(pages),
         "complete": len(completed),
         "page_size": page_size,
+        "render_scale": render_scale,
         "pages": pages,
     }

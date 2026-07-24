@@ -17,11 +17,18 @@ def main() -> None:
     parser.add_argument("batch_report", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--page-size", type=int, default=20)
+    parser.add_argument(
+        "--render-scale",
+        type=float,
+        default=1.0,
+        help="Scale proof-page pixel dimensions (for example, 1.5).",
+    )
     args = parser.parse_args()
     report = build_paginated_review(
         args.batch_report,
         args.output,
         page_size=args.page_size,
+        render_scale=args.render_scale,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
 
