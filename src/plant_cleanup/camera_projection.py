@@ -107,22 +107,28 @@ def visible_point_samples(
             np.empty(0, dtype=np.int64),
             np.empty((0, 2), dtype=np.int32),
         )
+    visibility_x = np.floor(pixels[rows, 0]).astype(np.int32)
+    visibility_y = np.floor(pixels[rows, 1]).astype(np.int32)
+    visibility_ids = (
+        visibility_y.astype(np.int64) * calibration.width
+        + visibility_x
+    )
+    depth_buffer = np.full(
+        calibration.width * calibration.height,
+        np.inf,
+        dtype=np.float32,
+    )
+    visible_depth = depth[rows].astype(np.float32)
+    np.minimum.at(depth_buffer, visibility_ids, visible_depth)
+    frontmost = visible_depth <= depth_buffer[visibility_ids]
+    rows = rows[frontmost]
     pixel_x = np.floor(
         pixels[rows, 0] * output_width / calibration.width
     ).astype(np.int32)
     pixel_y = np.floor(
         pixels[rows, 1] * output_height / calibration.height
     ).astype(np.int32)
-    pixel_ids = pixel_y.astype(np.int64) * output_width + pixel_x
-    depth_buffer = np.full(
-        output_width * output_height,
-        np.inf,
-        dtype=np.float64,
-    )
-    np.minimum.at(depth_buffer, pixel_ids, depth[rows])
-    frontmost = depth[rows] <= depth_buffer[pixel_ids]
-    rows = rows[frontmost]
     sampled_pixels = np.column_stack(
-        (pixel_x[frontmost], pixel_y[frontmost])
+        (pixel_x, pixel_y)
     )
     return rows, sampled_pixels

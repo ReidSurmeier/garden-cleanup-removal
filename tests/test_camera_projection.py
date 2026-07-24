@@ -109,3 +109,29 @@ def test_visible_samples_keep_the_nearest_point_per_segmentation_pixel() -> None
 
     assert rows.tolist() == [0, 2]
     assert pixels.tolist() == [[25, 20], [35, 20]]
+
+
+def test_visibility_uses_calibrated_resolution_before_label_downsampling() -> None:
+    calibration = CameraCalibration(
+        width=100,
+        height=80,
+        f=50.0,
+    )
+    points = np.array(
+        [
+            [0.0, 0.0, 2.0],
+            [0.24, 0.0, 3.0],
+        ],
+        dtype=np.float64,
+    )
+
+    rows, pixels = visible_point_samples(
+        points,
+        camera_transform=np.eye(4),
+        calibration=calibration,
+        output_width=10,
+        output_height=8,
+    )
+
+    assert rows.tolist() == [0, 1]
+    assert pixels.tolist() == [[5, 4], [5, 4]]
