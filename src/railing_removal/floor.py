@@ -16,6 +16,8 @@ class FloorRemovalParameters:
     bounds_margin: float = 0.50
     normal_alignment_min: float = 0.55
     excess_green_max: float = 10.0
+    grow_floor_components: bool = False
+    strong_plant_margin: int = 2
 
 
 def remove_uncertain_floor(
@@ -62,8 +64,10 @@ def remove_uncertain_floor(
         (decisions == 6) & (plant_votes > background_votes)
     )
     keep = keep_before_floor.copy()
-    uncertain = coordinates[decisions == 5]
+    uncertain_rows = np.flatnonzero(decisions == 5)
+    uncertain = coordinates[uncertain_rows]
     floor = np.zeros(point_count, dtype=bool)
+    grown_floor = np.zeros(point_count, dtype=bool)
     component_reports: list[dict[str, Any]] = []
 
     if len(uncertain):
@@ -87,7 +91,9 @@ def remove_uncertain_floor(
         )
 
         for label in np.flatnonzero(counts >= minimum_component):
-            points = uncertain[point_labels == label]
+            component_uncertain = point_labels == label
+            points = uncertain[component_uncertain]
+            component_seed_rows = uncertain_rows[component_uncertain]
             center = np.median(points, axis=0)
             fit_points = points
             for _ in range(3):
@@ -123,15 +129,65 @@ def remove_uncertain_floor(
                 & (excess_green < parameters.excess_green_max)
             )
             floor |= component_floor
+            component_grown = np.zeros(point_count, dtype=bool)
+            if parameters.grow_floor_components:
+                strong_plant = plant_votes.astype(np.int16) >= (
+                    background_votes.astype(np.int16)
+                    + parameters.strong_plant_margin
+                )
+                eligible = (
+                    np.isin(decisions, [1, 5, 6])
+                    & (distance <= parameters.plane_distance)
+                    & valid_normals
+                    & (alignment >= parameters.normal_alignment_min)
+                    & ~strong_plant
+                )
+                eligible[component_seed_rows] = True
+                rows = np.flatnonzero(eligible)
+                if len(rows):
+                    projected = (coordinates[rows] - center) @ axes
+                    lower_2d = projected.min(axis=0)
+                    projected_voxels = np.floor(
+                        (projected - lower_2d) / parameters.voxel_size
+                    ).astype(np.int32)
+                    shape_2d = tuple(
+                        (projected_voxels.max(axis=0) + 1).tolist()
+                    )
+                    grid_cells = int(np.prod(shape_2d, dtype=np.int64))
+                    if grid_cells > 100_000_000:
+                        raise ValueError(
+                            "adaptive floor grid would contain "
+                            f"{grid_cells:,} cells; increase voxel_size"
+                        )
+                    occupancy_2d = np.zeros(shape_2d, dtype=bool)
+                    occupancy_2d[tuple(projected_voxels.T)] = True
+                    labels_2d, _ = ndimage.label(
+                        occupancy_2d,
+                        structure=np.ones((3, 3), dtype=bool),
+                    )
+                    row_labels = labels_2d[tuple(projected_voxels.T)]
+                    seed_source = np.zeros(point_count, dtype=bool)
+                    seed_source[component_seed_rows] = True
+                    seed_labels = np.unique(
+                        row_labels[seed_source[rows]]
+                    )
+                    seed_labels = seed_labels[seed_labels != 0]
+                    component_grown[rows] = np.isin(
+                        row_labels,
+                        seed_labels,
+                    )
+                    grown_floor |= component_grown
             component_reports.append(
                 {
                     "label": int(label),
                     "seed_point_count": int(len(points)),
                     "matched_source_point_count": int(component_floor.sum()),
+                    "grown_source_point_count": int(component_grown.sum()),
                     "normal": [float(value) for value in normal],
                 }
             )
 
+    floor |= grown_floor
     keep &= ~floor
     report: dict[str, Any] = {
         "schema_version": 1,
@@ -149,6 +205,7 @@ def remove_uncertain_floor(
         "coplanar_points_removed_from_candidate": int(
             np.count_nonzero(keep_before_floor & floor)
         ),
+        "grown_floor_point_count": int(grown_floor.sum()),
         "floor_components": component_reports,
     }
     return keep, report

@@ -17,7 +17,11 @@ def main() -> None:
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--railing-plan", required=True, type=Path)
+    parser.add_argument(
+        "--railing-plan",
+        type=Path,
+        help="Enable railing removal using this scene plan.",
+    )
     args = parser.parse_args()
     report = run_full_cleanup(
         args.source,

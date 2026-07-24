@@ -19,6 +19,12 @@ from plant_cleanup.clipseg_votes import (
 )
 from plant_cleanup.cloud_render import render_cloud_views
 from plant_cleanup.color_correct import ColorParameters, correct_cloud_colors
+from plant_cleanup.dense_semantic import (
+    DensePropagationParameters,
+    HuggingFaceOneFormerPredictor,
+    aggregate_dense_semantic_votes,
+    propagate_dense_semantic_evidence,
+)
 from plant_cleanup.geometry_cleanup import (
     CleanupParameters,
     _support_height,
@@ -64,6 +70,7 @@ def _build_viewer(
     source: Path,
     previous: Path,
     plant: Path,
+    conservative: Path,
     rejected: Path,
     uncertain: Path,
     output: Path,
@@ -73,7 +80,7 @@ def _build_viewer(
         "source": source,
         "previous": previous,
         "plant": plant,
-        "conservative": plant,
+        "conservative": conservative,
         "rejected": rejected,
         "uncertain": uncertain,
     }
@@ -112,9 +119,10 @@ def run_full_cleanup(
     output_dir: Path,
     *,
     config_path: Path,
-    railing_plan_path: Path,
+    railing_plan_path: Path | None = None,
     clipseg_predictor: Any | None = None,
     sam2_predictor: Any | None = None,
+    dense_predictor: Any | None = None,
     progress: Progress | None = None,
 ) -> dict[str, Any]:
     """Run the complete approved geometry, vision, floor, and railing pipeline."""
@@ -122,7 +130,11 @@ def run_full_cleanup(
     source_path = source_path.resolve()
     output_dir = output_dir.resolve()
     config_path = config_path.resolve()
-    railing_plan_path = railing_plan_path.resolve()
+    railing_plan_path = (
+        railing_plan_path.resolve()
+        if railing_plan_path is not None
+        else None
+    )
     if output_dir.exists():
         raise FileExistsError(f"output already exists: {output_dir}")
     if not source_path.is_file():
@@ -130,7 +142,11 @@ def run_full_cleanup(
     progress = progress or (lambda _: None)
 
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    plan = json.loads(railing_plan_path.read_text(encoding="utf-8"))
+    plan = (
+        json.loads(railing_plan_path.read_text(encoding="utf-8"))
+        if railing_plan_path is not None
+        else None
+    )
     validate_config(config)
     cloud = read_cloud(source_path)
     source_hash = _sha256(source_path)
@@ -218,23 +234,104 @@ def run_full_cleanup(
         margin_min=vision["prompt_margin_min"],
     )
 
+    generic_plant_votes = np.load(sam2_dir / "plant-votes.npy")
+    generic_background_votes = np.load(sam2_dir / "planter-votes.npy")
+    plan_classes = {
+        str(object_class["id"]): object_class
+        for object_class in (plan or {}).get("classes", [])
+    }
+    non_railing_classes = {
+        class_id: object_class
+        for class_id, object_class in plan_classes.items()
+        if class_id != "railing"
+    }
+    scene_evidence: Path | None = None
+    scene_report: dict[str, Any] = {
+        "status": "skipped",
+        "reason": "no scene plan supplied",
+    }
+    if non_railing_classes:
+        progress("non-plant-semantic-evidence")
+        scene_values = config.get("scene_evidence", {})
+        scene_evidence = output_dir / "scene-evidence"
+        scene_report = run_scene_evidence(
+            source_path,
+            render_dir,
+            scene_evidence,
+            plan,
+            clipseg_predictor=clipseg_predictor,
+            sam2_predictor=sam2_predictor,
+            clipseg_model=scene_values.get(
+                "clipseg_model",
+                vision["clipseg_model"],
+            ),
+            sam2_model=scene_values.get(
+                "sam2_model",
+                vision["sam2_model"],
+            ),
+            confidence_min=float(
+                scene_values.get("clipseg_confidence_min", 0.2)
+            ),
+            clipseg_margin_min=float(
+                scene_values.get("clipseg_margin_min", 0.01)
+            ),
+            sam2_margin_min=float(
+                scene_values.get("sam2_margin_min", 0.05)
+            ),
+            prompt_grid=tuple(
+                scene_values.get("prompt_grid", [3, 6])
+            ),
+        )
+
     progress("semantic-refinement")
     semantic_dir = output_dir / "semantic"
+    fused_scene = (
+        scene_evidence / "fused"
+        if scene_evidence is not None
+        else None
+    )
     semantic_report = refine_with_semantics(
         source_path,
         decisions,
-        np.load(sam2_dir / "plant-votes.npy"),
-        np.load(sam2_dir / "planter-votes.npy"),
+        generic_plant_votes,
+        generic_background_votes,
         support_cutoff=support_cutoff,
         output_dir=semantic_dir,
         parameters=SemanticParameters(**config["semantic_refinement"]),
+        background_class_votes=(
+            {
+                class_id: np.load(
+                    fused_scene / f"{class_id}-votes.npy"
+                )
+                for class_id in non_railing_classes
+            }
+            if fused_scene is not None
+            else None
+        ),
+        background_class_plant_votes=(
+            {
+                class_id: np.load(
+                    fused_scene / f"{class_id}-plant-votes.npy"
+                )
+                for class_id in non_railing_classes
+            }
+            if fused_scene is not None
+            else None
+        ),
+        background_class_policies={
+            class_id: str(
+                object_class.get(
+                    "decision_policy",
+                    "strict_background",
+                )
+            )
+            for class_id, object_class in non_railing_classes.items()
+        },
     )
     _write_json(semantic_dir / "semantic-report.json", semantic_report)
 
     progress("uncertain-floor-removal")
     semantic_decisions = np.load(semantic_dir / "decision-codes.npy")
-    generic_plant_votes = np.load(sam2_dir / "plant-votes.npy")
-    generic_background_votes = np.load(sam2_dir / "planter-votes.npy")
     floor_keep, floor_report = remove_uncertain_floor(
         coordinates,
         normals=normals,
@@ -251,46 +348,126 @@ def run_full_cleanup(
     write_decision_cloud(cloud, floor_rejected, ~floor_keep, semantic_decisions)
     _write_json(floor_dir / "floor-report.json", floor_report)
 
-    progress("railing-semantic-evidence")
-    scene_values = config.get("scene_evidence", {})
-    railing_evidence = output_dir / "railing-evidence"
-    railing_report = run_scene_evidence(
-        source_path,
-        render_dir,
-        railing_evidence,
-        plan,
-        clipseg_predictor=clipseg_predictor,
-        sam2_predictor=sam2_predictor,
-        clipseg_model=scene_values.get(
-            "clipseg_model",
-            vision["clipseg_model"],
-        ),
-        sam2_model=scene_values.get("sam2_model", vision["sam2_model"]),
-        confidence_min=float(
-            scene_values.get("clipseg_confidence_min", 0.2)
-        ),
-        clipseg_margin_min=float(
-            scene_values.get("clipseg_margin_min", 0.01)
-        ),
-        sam2_margin_min=float(scene_values.get("sam2_margin_min", 0.05)),
-        prompt_grid=tuple(scene_values.get("prompt_grid", [3, 6])),
-    )
+    dense_values = config.get("dense_semantic")
+    if dense_values:
+        progress("dense-semantic-evidence")
+        dense_predictor = (
+            dense_predictor
+            or HuggingFaceOneFormerPredictor(dense_values["model"])
+        )
+        dense_dir = output_dir / "dense-semantic"
+        dense_report = aggregate_dense_semantic_votes(
+            source_path,
+            render_dir,
+            dense_dir,
+            predictor=dense_predictor,
+            model_id=dense_values["model"],
+            plant_labels=tuple(dense_values["plant_labels"]),
+            background_labels=tuple(
+                dense_values["background_labels"]
+            ),
+        )
+        strict_keep, conservative_keep, propagation_report = (
+            propagate_dense_semantic_evidence(
+                coordinates,
+                normals=normals,
+                candidate_mask=floor_keep,
+                plant_votes=np.load(dense_dir / "plant-votes.npy"),
+                background_votes=np.load(
+                    dense_dir / "background-votes.npy"
+                ),
+                support_plane_coefficients=tuple(
+                    semantic_report["support_plane"]["coefficients"]
+                ),
+                vertical_span=float(config["profile"]["vertical_span"]),
+                parameters=DensePropagationParameters(
+                    **dense_values["propagation"]
+                ),
+            )
+        )
+        _write_json(
+            dense_dir / "propagation-report.json",
+            propagation_report,
+        )
+    else:
+        strict_keep = floor_keep.copy()
+        conservative_keep = floor_keep.copy()
+        dense_report = {
+            "status": "skipped",
+            "reason": "dense_semantic is not configured",
+        }
+        propagation_report = dense_report
 
-    progress("railing-line-completion")
-    fused = railing_evidence / "fused"
-    railing_reject, completion_report = complete_railing_lines(
-        coordinates,
-        rgb=rgb,
-        candidate_mask=floor_keep,
-        railing_votes=np.load(fused / "railing-votes.npy"),
-        plant_votes=np.load(fused / "railing-plant-votes.npy"),
-    )
-    final_keep = floor_keep & ~railing_reject
+    if "railing" in plan_classes:
+        progress("railing-semantic-evidence")
+        if scene_evidence is None:
+            scene_values = config.get("scene_evidence", {})
+            scene_evidence = output_dir / "scene-evidence"
+            scene_report = run_scene_evidence(
+                source_path,
+                render_dir,
+                scene_evidence,
+                plan,
+                clipseg_predictor=clipseg_predictor,
+                sam2_predictor=sam2_predictor,
+                clipseg_model=scene_values.get(
+                    "clipseg_model",
+                    vision["clipseg_model"],
+                ),
+                sam2_model=scene_values.get(
+                    "sam2_model",
+                    vision["sam2_model"],
+                ),
+                confidence_min=float(
+                    scene_values.get("clipseg_confidence_min", 0.2)
+                ),
+                clipseg_margin_min=float(
+                    scene_values.get("clipseg_margin_min", 0.01)
+                ),
+                sam2_margin_min=float(
+                    scene_values.get("sam2_margin_min", 0.05)
+                ),
+                prompt_grid=tuple(
+                    scene_values.get("prompt_grid", [3, 6])
+                ),
+            )
+        progress("railing-line-completion")
+        fused = scene_evidence / "fused"
+        railing_reject, completion_report = complete_railing_lines(
+            coordinates,
+            rgb=rgb,
+            candidate_mask=floor_keep,
+            railing_votes=np.load(fused / "railing-votes.npy"),
+            plant_votes=np.load(fused / "railing-plant-votes.npy"),
+        )
+    else:
+        progress("railing-stage-skipped")
+        railing_reject = np.zeros(len(cloud), dtype=bool)
+        completion_report = {
+            "schema_version": 1,
+            "status": "skipped",
+            "candidate_point_count": int(floor_keep.sum()),
+            "completed_point_count": 0,
+            "reason": (
+                "no scene plan supplied"
+                if plan is None
+                else "scene plan contains no railing class"
+            ),
+        }
+    final_keep = strict_keep & ~railing_reject
+    final_conservative_keep = conservative_keep & ~railing_reject
     final_dir = output_dir / "final"
     final_dir.mkdir()
     plant_path = final_dir / "plant-cleaned.ply"
+    conservative_path = final_dir / "plant-cleaned-conservative.ply"
     rejected_path = final_dir / "rejected-cleaned.ply"
     write_decision_cloud(cloud, plant_path, final_keep, semantic_decisions)
+    write_decision_cloud(
+        cloud,
+        conservative_path,
+        final_conservative_keep,
+        semantic_decisions,
+    )
     write_decision_cloud(cloud, rejected_path, ~final_keep, semantic_decisions)
     _write_json(final_dir / "railing-completion-report.json", completion_report)
 
@@ -307,6 +484,7 @@ def run_full_cleanup(
     for name, path in (
         ("source", source_path),
         ("plant", plant_path),
+        ("conservative", conservative_path),
         ("rejected", rejected_path),
     ):
         proof = render_cloud_views(
@@ -322,6 +500,7 @@ def run_full_cleanup(
         source=source_path,
         previous=floor_plant,
         plant=plant_path,
+        conservative=conservative_path,
         rejected=rejected_path,
         uncertain=semantic_dir / "uncertain-semantic.ply",
         output=output_dir / "review",
@@ -335,11 +514,22 @@ def run_full_cleanup(
         "source_opened_read_only": True,
         "config": str(config_path),
         "config_sha256": _sha256(config_path),
-        "railing_plan": str(railing_plan_path),
-        "railing_plan_sha256": _sha256(railing_plan_path),
+        "railing_plan": (
+            str(railing_plan_path)
+            if railing_plan_path is not None
+            else None
+        ),
+        "railing_plan_sha256": (
+            _sha256(railing_plan_path)
+            if railing_plan_path is not None
+            else None
+        ),
         "models": {
             "clipseg": vision["clipseg_model"],
             "sam2": vision["sam2_model"],
+            "oneformer": (
+                dense_values["model"] if dense_values else None
+            ),
         },
         "support_height": support_height,
         "support_cutoff": support_cutoff,
@@ -347,11 +537,14 @@ def run_full_cleanup(
             "floor_candidate": int(floor_keep.sum()),
             "railing_removed": int((floor_keep & railing_reject).sum()),
             "plant_cleaned": int(final_keep.sum()),
+            "plant_conservative": int(final_conservative_keep.sum()),
             "rejected_cleaned": int((~final_keep).sum()),
         },
         "semantic": semantic_report,
         "floor": floor_report,
-        "railing_evidence": railing_report,
+        "dense_semantic": dense_report,
+        "dense_propagation": propagation_report,
+        "scene_evidence": scene_report,
         "railing_completion": completion_report,
         "color_correction": color_report,
         "viewer_layers": {
@@ -360,6 +553,7 @@ def run_full_cleanup(
         },
         "artifacts": {
             "plant": str(plant_path),
+            "plant_conservative": str(conservative_path),
             "plant_color_corrected": str(color_path),
             "rejected": str(rejected_path),
             "viewer": str(output_dir / "review" / "viewer.html"),

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scan_id": "adaptive-planter",
+  "target_intent": "Keep all coherent plants, roots, stems, branches, and leaves. Remove the planter structure, soil bed, gravel, pavement, and reconstruction noise.",
+  "plant_prompt": "garden plants, leaves, roots, stems, branches, shrubs, succulents and flowers",
+  "classes": [
+    {
+      "id": "planter",
+      "prompt": "concrete planter curb, raised edging, exposed soil bed, gravel, pavement and flat non-plant ground",
+      "distractor_prompt": "living plants, leaves, woody stems, exposed roots, shrubs, succulents and flowers",
+      "anchor_strategy": "semantic",
+      "decision_policy": "class_exclusive_background",
+      "background_depth_fraction": 0.006,
+      "background_anchor_limit": 12,
+      "required_segmented_views": 1
+    }
+  ]
+}

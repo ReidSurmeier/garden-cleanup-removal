@@ -19,6 +19,7 @@ vision = [
 garden-railing-remove = "railing_removal.cli:main"
 garden-full-cleanup = "railing_removal.full_cli:main"
 garden-metashape-export = "railing_removal.metashape_cli:main"
+garden-adaptive-config = "railing_removal.adaptive_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

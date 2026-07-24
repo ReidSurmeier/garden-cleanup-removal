@@ -37,3 +37,61 @@ def test_uncertain_floor_seeds_remove_the_same_coplanar_candidate_surface() -> N
     assert not keep[: len(floor)].any()
     assert keep[len(floor) :].all()
     assert report["coplanar_points_removed_from_candidate"] == len(floor) // 2
+
+
+def test_adaptive_floor_growth_removes_green_ground_but_protects_root_evidence(
+) -> None:
+    uncertain_floor = np.array(
+        [
+            (float(x), float(y), 0.0)
+            for x in range(3)
+            for y in range(2)
+        ],
+        dtype=np.float64,
+    )
+    connected_green_ground = np.array(
+        [
+            (float(x), float(y), 0.0)
+            for x in range(3, 10)
+            for y in range(2)
+        ],
+        dtype=np.float64,
+    )
+    protected_root = np.array([(5.0, 0.4, 0.02)], dtype=np.float64)
+    raised_plant = np.array([(5.0, 0.0, 2.0)], dtype=np.float64)
+    coordinates = np.vstack(
+        (
+            uncertain_floor,
+            connected_green_ground,
+            protected_root,
+            raised_plant,
+        )
+    )
+    normals = np.tile((0.0, 0.0, 1.0), (len(coordinates), 1))
+    rgb = np.tile((40, 150, 35), (len(coordinates), 1))
+    decisions = np.ones(len(coordinates), dtype=np.uint8)
+    decisions[: len(uncertain_floor)] = 5
+    plant_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    plant_votes[-2] = 3
+
+    keep, report = remove_uncertain_floor(
+        coordinates,
+        normals=normals,
+        rgb=rgb,
+        decisions=decisions,
+        plant_votes=plant_votes,
+        background_votes=np.zeros(len(coordinates), dtype=np.uint8),
+        parameters=FloorRemovalParameters(
+            voxel_size=1.1,
+            minimum_component_points=2,
+            component_fraction=0.0,
+            plane_distance=0.1,
+            bounds_margin=0.1,
+            grow_floor_components=True,
+            strong_plant_margin=2,
+        ),
+    )
+
+    assert not keep[: len(uncertain_floor) + len(connected_green_ground)].any()
+    assert keep[-2:].all()
+    assert report["grown_floor_point_count"] == len(coordinates) - 2
