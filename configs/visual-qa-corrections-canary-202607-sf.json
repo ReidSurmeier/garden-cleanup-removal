@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "assignments": {
+    "2026-07-17 11.33.44": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 13.26.27": [
+      "fence"
+    ]
+  }
+}

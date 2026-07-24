@@ -5,6 +5,7 @@ import pytest
 
 from railing_removal.correction_manifest import (
     build_correction_manifest,
+    build_targeted_correction_manifest,
 )
 
 
@@ -119,3 +120,74 @@ def test_refuses_to_overwrite_or_omit_an_unknown_failed_scan(
             output,
         )
     assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+def test_builds_targeted_visual_qa_corrections_with_object_scene_plans(
+    tmp_path: Path,
+) -> None:
+    source_manifest = tmp_path / "cleanup-manifest.json"
+    scene_catalog = tmp_path / "scene-catalog.json"
+    assignments = tmp_path / "visual-qa-assignments.json"
+    output = tmp_path / "targeted-corrections.json"
+    _write_json(
+        source_manifest,
+        {
+            "schema_version": 1,
+            "scans": [
+                {
+                    "scan_id": "scan-with-turf",
+                    "source": "F:\\clouds\\scan-with-turf.ply",
+                    "config": "F:\\configs\\scan-with-turf.json",
+                },
+                {
+                    "scan_id": "accepted-scan",
+                    "source": "F:\\clouds\\accepted-scan.ply",
+                    "config": "F:\\configs\\accepted-scan.json",
+                },
+            ],
+        },
+    )
+    _write_json(
+        scene_catalog,
+        {
+            "schema_version": 1,
+            "target_intent": "Keep plants and remove assigned objects.",
+            "plant_prompt": "complete living plants including roots",
+            "classes": {
+                "turf_ground": {
+                    "prompt": "flat lawn turf ground surface",
+                    "distractor_prompt": "raised plants roots and leaves",
+                    "anchor_strategy": "semantic",
+                    "decision_policy": "ground_surface",
+                }
+            },
+            "assignments": {},
+        },
+    )
+    _write_json(
+        assignments,
+        {
+            "schema_version": 1,
+            "assignments": {"scan-with-turf": ["turf_ground"]},
+        },
+    )
+
+    result = build_targeted_correction_manifest(
+        source_manifest,
+        scene_catalog,
+        assignments,
+        output,
+    )
+
+    assert [scan["scan_id"] for scan in result["scans"]] == [
+        "scan-with-turf"
+    ]
+    correction = result["scans"][0]
+    assert correction["review_artifacts"] is False
+    plan = json.loads(
+        Path(correction["scene_plan"]).read_text(encoding="utf-8")
+    )
+    assert plan["scan_id"] == "scan-with-turf"
+    assert [item["id"] for item in plan["classes"]] == ["turf_ground"]
+    assert plan["classes"][0]["decision_policy"] == "ground_surface"
+    assert json.loads(output.read_text(encoding="utf-8")) == result

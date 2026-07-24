@@ -30,11 +30,29 @@
       "background_anchor_limit": 12,
       "required_segmented_views": 1
     },
+    "pavement_ground": {
+      "prompt": "flat concrete pavement, paved walkway, curb, planter border, gravel path or bare mulch ground surface",
+      "distractor_prompt": "exposed roots, trunks, woody stems, branches, leaves, flowers, shrubs and raised ornamental grasses",
+      "anchor_strategy": "semantic",
+      "decision_policy": "ground_surface",
+      "background_depth_fraction": 0.006,
+      "background_anchor_limit": 12,
+      "required_segmented_views": 1
+    },
     "railing": {
       "prompt": "rigid metal railing, straight handrail, diagonal fence bars, evenly spaced vertical metal posts and metal top bar",
       "distractor_prompt": "woody tree branches, curved stems, trunks, exposed roots, shrubs and leaves",
       "anchor_strategy": "semantic",
       "decision_policy": "class_exclusive_background",
+      "background_depth_fraction": 0.006,
+      "background_anchor_limit": 12,
+      "required_segmented_views": 1
+    },
+    "turf_ground": {
+      "prompt": "flat lawn turf, continuous mown grass ground plane or walkable green ground surface",
+      "distractor_prompt": "raised ornamental grasses, exposed roots, stems, trunks, branches, shrubs, leaves and flowers",
+      "anchor_strategy": "semantic",
+      "decision_policy": "ground_surface",
       "background_depth_fraction": 0.006,
       "background_anchor_limit": 12,
       "required_segmented_views": 1
@@ -74,6 +92,21 @@
     "2026-07-16 14.09.12": [
       "living_wall_frame"
     ],
+    "2026-07-16 09.31.38": [
+      "turf_ground"
+    ],
+    "2026-07-16 09.33.54": [
+      "turf_ground"
+    ],
+    "2026-07-16 09.37.20": [
+      "pavement_ground"
+    ],
+    "2026-07-16 11.32.34": [
+      "turf_ground"
+    ],
+    "2026-07-16 11.32.55": [
+      "turf_ground"
+    ],
     "2026-07-16 14.57.14": [
       "fence"
     ],
@@ -100,6 +133,40 @@
     ],
     "2026-07-17 13.18.02": [
       "chain_barrier"
+    ],
+    "2026-07-17 10.38.36": [
+      "turf_ground"
+    ],
+    "2026-07-17 11.27.39": [
+      "turf_ground"
+    ],
+    "2026-07-17 11.30.07": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 11.32.09": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 11.33.44": [
+      "turf_ground",
+      "pavement_ground"
+    ],
+    "2026-07-17 13.24.49": [
+      "turf_ground"
+    ],
+    "2026-07-17 13.26.27": [
+      "fence"
+    ],
+    "2026-07-17 13.26.44": [
+      "fence"
+    ],
+    "2026-07-17 13.33.08": [
+      "living_wall_frame"
+    ],
+    "2026-07-17 13.38.05": [
+      "fence",
+      "railing"
     ]
   }
 }
