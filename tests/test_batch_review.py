@@ -86,6 +86,9 @@ def test_paginated_review_builds_bounded_contact_sheets(
     assert (output / "page-001.jpg").is_file()
     assert (output / "page-002.jpg").is_file()
     assert (output / "index.html").is_file()
+    document = (output / "index.html").read_text(encoding="utf-8")
+    assert "../cleanup/scan-0/review/viewer.html" in document
+    assert "scan-0 3D" in document
 
     with pytest.raises(FileExistsError, match="already exists"):
         build_paginated_review(report_path, output, page_size=2)

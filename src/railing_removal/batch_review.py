@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 from pathlib import Path
 from urllib.parse import quote
 
@@ -190,6 +191,21 @@ def build_paginated_review(
                 "scan_ids": [
                     str(result["scan_id"]) for result in page_results
                 ],
+                "viewers": [
+                    {
+                        "scan_id": str(result["scan_id"]),
+                        "url": quote(
+                            os.path.relpath(
+                                Path(str(result["output"]))
+                                / "review"
+                                / "viewer.html",
+                                output_dir,
+                            ).replace("\\", "/"),
+                            safe="/.",
+                        ),
+                    }
+                    for result in page_results
+                ],
             }
         )
     figures = "".join(
@@ -197,7 +213,14 @@ def build_paginated_review(
         f'{html.escape(str(page["scan_ids"][0]))} through '
         f'{html.escape(str(page["scan_ids"][-1]))}</figcaption>'
         f'<a href="{page["file"]}"><img src="{page["file"]}" '
-        f'alt="Review page {page["number"]}"></a></figure>'
+        f'alt="Review page {page["number"]}"></a>'
+        f'<nav class="viewers">'
+        + "".join(
+            f'<a href="{viewer["url"]}">'
+            f'{html.escape(str(viewer["scan_id"]))} 3D</a>'
+            for viewer in page["viewers"]
+        )
+        + "</nav></figure>"
         for page in pages
     )
     document = f"""<!doctype html>
@@ -211,6 +234,9 @@ main {{ width: min(1400px, 96vw); margin: 28px auto 80px; }}
 figure {{ margin: 24px 0; }}
 figcaption {{ margin-bottom: 8px; color: #c7cad1; }}
 img {{ width: 100%; height: auto; display: block; }}
+.viewers {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }}
+.viewers a {{ color: #92b8ff; background: #181b21; padding: 6px 9px;
+text-decoration: none; border-radius: 3px; }}
 </style></head><body><main>
 <h1>Garden cleanup proof pages</h1>
 <p>{len(completed)} completed scans across {len(pages)} pages.</p>
