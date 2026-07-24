@@ -18,7 +18,7 @@ class Predictor(Protocol):
 
 
 class HuggingFaceOneFormerPredictor:
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, device: str | None = None) -> None:
         import torch
         from transformers import (
             OneFormerForUniversalSegmentation,
@@ -26,7 +26,9 @@ class HuggingFaceOneFormerPredictor:
         )
 
         self._torch = torch
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = device or (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
         self._processor = OneFormerProcessor.from_pretrained(model_id)
         self._model = (
             OneFormerForUniversalSegmentation.from_pretrained(model_id)
