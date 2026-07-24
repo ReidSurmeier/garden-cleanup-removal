@@ -70,9 +70,10 @@
         "line_completion_parameters": {
           "minimum_line_seed_points": 6,
           "minimum_line_length": 0.30,
+          "minimum_seed_height_above_support": 0.80,
           "seed_distance": 0.09,
           "completion_radius": 0.25,
-          "completion_margin": 0.15,
+          "completion_margin": 0.90,
           "max_lines": 60,
           "ransac_iterations": 5000
         }

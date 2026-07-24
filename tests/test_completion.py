@@ -193,6 +193,44 @@ def test_each_rigid_class_can_use_source_verified_line_parameters() -> None:
     assert report["classes"]["post"]["accepted_line_count"] == 1
 
 
+def test_source_relative_height_gate_excludes_ground_border_lines() -> None:
+    ground_border = np.array(
+        [(x, 0.0, 0.0) for x in np.linspace(-2.0, 2.0, 41)],
+        dtype=np.float64,
+    )
+    raised_beam = np.array(
+        [(x, 1.0, 1.5) for x in np.linspace(-2.0, 2.0, 41)],
+        dtype=np.float64,
+    )
+    coordinates = np.vstack((ground_border, raised_beam))
+    rgb = np.full((len(coordinates), 3), 90, dtype=np.uint8)
+    railing_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    railing_votes[: len(ground_border) : 5] = 2
+    railing_votes[len(ground_border) :: 5] = 2
+
+    rejected, report = complete_railing_lines(
+        coordinates,
+        rgb=rgb,
+        candidate_mask=np.ones(len(coordinates), dtype=bool),
+        railing_votes=railing_votes,
+        plant_votes=np.zeros(len(coordinates), dtype=np.uint8),
+        support_height=0.0,
+        parameters=LineCompletionParameters(
+            minimum_seed_height_above_support=0.5,
+            minimum_line_seed_points=5,
+            minimum_line_length=1.0,
+            seed_distance=0.03,
+            completion_radius=0.08,
+            ransac_iterations=500,
+        ),
+    )
+
+    assert not rejected[: len(ground_border)].any()
+    assert rejected[len(ground_border) :].all()
+    assert report["height_eligible_seed_count"] == 9
+    assert report["accepted_line_count"] == 1
+
+
 def test_rejected_fence_evidence_can_complete_remaining_candidate_points() -> None:
     fence = np.array(
         [(x, 0.0, 1.0) for x in np.linspace(-5.0, 5.0, 101)],

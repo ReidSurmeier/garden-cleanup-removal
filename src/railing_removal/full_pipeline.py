@@ -585,6 +585,7 @@ def run_full_cleanup(
                     class_id: completion_class_plant_votes[class_id]
                     for class_id in rigid_line_classes
                 },
+                support_height=support_height,
                 parameters_by_class=line_parameters_by_class,
             )
             railing_reject |= line_reject

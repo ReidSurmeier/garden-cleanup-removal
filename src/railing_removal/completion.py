@@ -17,6 +17,7 @@ class LineCompletionParameters:
     completion_excess_green_max: float = 35.0
     completion_saturation_max: float = 0.45
     strong_plant_margin: int = 3
+    minimum_seed_height_above_support: float | None = None
     minimum_line_seed_points: int = 15
     minimum_line_length: float = 0.70
     max_lines: int = 40
@@ -97,6 +98,7 @@ def complete_railing_lines(
     seed_mask: np.ndarray | None = None,
     railing_votes: np.ndarray,
     plant_votes: np.ndarray,
+    support_height: float | None = None,
     parameters: LineCompletionParameters | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Complete rigid rail lines from sparse class-exclusive semantic evidence."""
@@ -126,6 +128,20 @@ def complete_railing_lines(
     plant_votes = _validate_vector("plant_votes", plant_votes, point_count)
     if parameters.minimum_line_seed_points < 2:
         raise ValueError("minimum_line_seed_points must be at least two")
+    if (
+        parameters.minimum_seed_height_above_support is not None
+        and parameters.minimum_seed_height_above_support < 0
+    ):
+        raise ValueError(
+            "minimum_seed_height_above_support must be non-negative"
+        )
+    if (
+        parameters.minimum_seed_height_above_support is not None
+        and support_height is None
+    ):
+        raise ValueError(
+            "support_height is required for a relative seed height gate"
+        )
 
     excess_green = 2.0 * rgb[:, 1] - rgb[:, 0] - rgb[:, 2]
     saturation = (rgb.max(axis=1) - rgb.min(axis=1)) / np.maximum(
@@ -142,7 +158,14 @@ def complete_railing_lines(
         & (excess_green <= parameters.seed_excess_green_max)
         & (saturation <= parameters.seed_saturation_max)
     )
-    remaining_ids = np.flatnonzero(structural_seeds)
+    height_eligible_seeds = structural_seeds.copy()
+    if parameters.minimum_seed_height_above_support is not None:
+        assert support_height is not None
+        height_eligible_seeds &= coordinates[:, 2] >= (
+            support_height
+            + parameters.minimum_seed_height_above_support
+        )
+    remaining_ids = np.flatnonzero(height_eligible_seeds)
     rejected = np.zeros(point_count, dtype=bool)
     rng = np.random.default_rng(parameters.random_seed)
     line_reports: list[dict[str, Any]] = []
@@ -212,6 +235,10 @@ def complete_railing_lines(
         "seed_candidate_point_count": int(seed_mask.sum()),
         "confirmed_seed_count": int(confirmed.sum()),
         "structural_seed_count": int(structural_seeds.sum()),
+        "height_eligible_seed_count": int(height_eligible_seeds.sum()),
+        "support_height": (
+            None if support_height is None else float(support_height)
+        ),
         "accepted_line_count": len(line_reports),
         "completed_point_count": int(rejected.sum()),
         "lines": line_reports,
@@ -227,6 +254,7 @@ def complete_rigid_line_classes(
     seed_mask: np.ndarray | None = None,
     class_votes: Mapping[str, np.ndarray],
     class_plant_votes: Mapping[str, np.ndarray],
+    support_height: float | None = None,
     parameters: LineCompletionParameters | None = None,
     parameters_by_class: Mapping[
         str, LineCompletionParameters
@@ -257,6 +285,7 @@ def complete_rigid_line_classes(
             seed_mask=seed_mask,
             railing_votes=votes,
             plant_votes=class_plant_votes[class_id],
+            support_height=support_height,
             parameters=(
                 parameters_by_class.get(class_id, parameters)
                 if parameters_by_class is not None
