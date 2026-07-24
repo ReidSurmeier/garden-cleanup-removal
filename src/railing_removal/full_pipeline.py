@@ -46,7 +46,10 @@ from railing_removal.completion import (
     complete_rigid_line_classes,
     complete_rigid_surface_classes,
 )
-from railing_removal.floor import remove_uncertain_floor
+from railing_removal.floor import (
+    complete_ground_surface_classes,
+    remove_uncertain_floor,
+)
 
 
 Progress = Callable[[str], None]
@@ -359,6 +362,47 @@ def run_full_cleanup(
     write_decision_cloud(cloud, floor_rejected, ~floor_keep, semantic_decisions)
     _write_json(floor_dir / "floor-report.json", floor_report)
 
+    ground_surface_classes = {
+        class_id: object_class
+        for class_id, object_class in plan_classes.items()
+        if object_class.get("decision_policy") == "ground_surface"
+    }
+    if ground_surface_classes:
+        if fused_scene is None:
+            raise ValueError(
+                "ground-surface completion requires scene evidence"
+            )
+        progress("semantic-ground-surface-completion")
+        ground_surface_reject, ground_surface_report = (
+            complete_ground_surface_classes(
+                coordinates,
+                normals=normals,
+                candidate_mask=floor_keep,
+                seed_mask=semantic_decisions == 4,
+                class_votes={
+                    class_id: np.load(
+                        fused_scene / f"{class_id}-votes.npy"
+                    )
+                    for class_id in ground_surface_classes
+                },
+                class_plant_votes={
+                    class_id: np.load(
+                        fused_scene / f"{class_id}-plant-votes.npy"
+                    )
+                    for class_id in ground_surface_classes
+                },
+            )
+        )
+        floor_keep &= ~ground_surface_reject
+    else:
+        ground_surface_reject = np.zeros(len(cloud), dtype=bool)
+        ground_surface_report = {
+            "schema_version": 1,
+            "status": "skipped",
+            "completed_point_count": 0,
+            "reason": "scene plan contains no ground-surface class",
+        }
+
     dense_values = config.get("dense_semantic")
     if dense_values:
         progress("dense-semantic-evidence")
@@ -532,7 +576,7 @@ def run_full_cleanup(
     final_dir = output_dir / "final"
     final_dir.mkdir()
     final_decisions = semantic_decisions.copy()
-    final_decisions[railing_reject] = 4
+    final_decisions[ground_surface_reject | railing_reject] = 4
     np.save(final_dir / "decision-codes.npy", final_decisions)
     plant_path = final_dir / "plant-cleaned.ply"
     conservative_path = final_dir / "plant-cleaned-conservative.ply"
@@ -619,6 +663,7 @@ def run_full_cleanup(
         "support_cutoff": support_cutoff,
         "counts": {
             "floor_candidate": int(floor_keep.sum()),
+            "ground_surface_removed": int(ground_surface_reject.sum()),
             "railing_removed": int((floor_keep & railing_reject).sum()),
             "plant_cleaned": int(final_keep.sum()),
             "plant_conservative": int(final_conservative_keep.sum()),
@@ -626,6 +671,7 @@ def run_full_cleanup(
         },
         "semantic": semantic_report,
         "floor": floor_report,
+        "ground_surface_completion": ground_surface_report,
         "dense_semantic": dense_report,
         "dense_propagation": propagation_report,
         "scene_evidence": scene_report,

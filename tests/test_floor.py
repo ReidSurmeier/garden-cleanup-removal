@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from railing_removal.floor import FloorRemovalParameters, remove_uncertain_floor
+from railing_removal.floor import (
+    FloorRemovalParameters,
+    GroundSurfaceCompletionParameters,
+    complete_ground_surface_classes,
+    remove_uncertain_floor,
+)
 
 
 def test_uncertain_floor_seeds_remove_the_same_coplanar_candidate_surface() -> None:
@@ -160,4 +165,48 @@ def test_post_semantic_floor_growth_removes_brown_model_mistake_without_roots_or
     assert keep[-3:].all()
     assert report["grown_floor_point_count"] == (
         len(uncertain_floor) + len(brown_mulch)
+    )
+
+
+def test_raised_semantic_ground_plane_is_completed_without_roots_or_plants(
+) -> None:
+    ground = np.array(
+        [
+            (float(x), float(y), 1.25)
+            for x in range(11)
+            for y in range(7)
+        ],
+        dtype=np.float64,
+    )
+    root = np.array([(5.0, 3.0, 1.27)], dtype=np.float64)
+    raised_plant = np.array([(5.0, 3.0, 3.0)], dtype=np.float64)
+    coordinates = np.vstack((ground, root, raised_plant))
+    normals = np.tile((0.0, 0.0, 1.0), (len(coordinates), 1))
+    normals[-2] = (1.0, 0.0, 0.0)
+    object_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    evidence_mask = np.zeros(len(coordinates), dtype=bool)
+    evidence_mask[: len(ground) : 3] = True
+    object_votes[evidence_mask] = 2
+    plant_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    plant_votes[-2:] = 5
+    candidate_mask = ~evidence_mask
+
+    rejected, report = complete_ground_surface_classes(
+        coordinates,
+        normals=normals,
+        candidate_mask=candidate_mask,
+        seed_mask=evidence_mask,
+        class_votes={"turf_ground": object_votes},
+        class_plant_votes={"turf_ground": plant_votes},
+        parameters=GroundSurfaceCompletionParameters(
+            minimum_surface_seed_points=10,
+            minimum_surface_span=1.0,
+            plane_distance=0.08,
+        ),
+    )
+
+    assert rejected[: len(ground)][candidate_mask[: len(ground)]].all()
+    assert not rejected[-2:].any()
+    assert (
+        report["classes"]["turf_ground"]["accepted_surface_count"] == 1
     )

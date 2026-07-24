@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 from scipy import ndimage
@@ -18,6 +18,185 @@ class FloorRemovalParameters:
     excess_green_max: float = 10.0
     grow_floor_components: bool = False
     strong_plant_margin: int = 2
+
+
+@dataclass(frozen=True)
+class GroundSurfaceCompletionParameters:
+    minimum_object_votes: int = 1
+    minimum_surface_seed_points: int = 200
+    minimum_surface_span: float = 1.0
+    fit_trim_quantile: float = 0.90
+    fit_iterations: int = 4
+    plane_distance: float = 0.50
+    bounds_margin: float = 0.50
+    normal_alignment_min: float = 0.55
+    strong_plant_margin: int = 2
+
+
+def complete_ground_surface_classes(
+    coordinates: np.ndarray,
+    *,
+    normals: np.ndarray,
+    candidate_mask: np.ndarray,
+    seed_mask: np.ndarray | None,
+    class_votes: Mapping[str, np.ndarray],
+    class_plant_votes: Mapping[str, np.ndarray],
+    parameters: GroundSurfaceCompletionParameters | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Complete raised or sloped ground planes from semantic class evidence."""
+    parameters = parameters or GroundSurfaceCompletionParameters()
+    coordinates = np.asarray(coordinates, dtype=np.float64)
+    normals = np.asarray(normals, dtype=np.float64)
+    point_count = len(coordinates)
+    if coordinates.shape != (point_count, 3):
+        raise ValueError("coordinates must have shape (point_count, 3)")
+    if normals.shape != (point_count, 3):
+        raise ValueError("normals must have shape (point_count, 3)")
+    candidate_mask = np.asarray(candidate_mask, dtype=bool)
+    if candidate_mask.shape != (point_count,):
+        raise ValueError(f"candidate_mask must have shape ({point_count},)")
+    seed_mask = (
+        candidate_mask
+        if seed_mask is None
+        else np.asarray(seed_mask, dtype=bool)
+    )
+    if seed_mask.shape != (point_count,):
+        raise ValueError(f"seed_mask must have shape ({point_count},)")
+    if not class_votes:
+        raise ValueError("at least one ground-surface class is required")
+    if set(class_votes) != set(class_plant_votes):
+        raise ValueError("ground object and plant vote classes must match")
+    if parameters.minimum_surface_seed_points < 3:
+        raise ValueError("minimum_surface_seed_points must be at least three")
+    if not 0.0 < parameters.fit_trim_quantile <= 1.0:
+        raise ValueError("fit_trim_quantile must be in (0, 1]")
+
+    normal_lengths = np.linalg.norm(normals, axis=1)
+    valid_normals = normal_lengths > 1e-8
+    normalized_normals = normals.copy()
+    normalized_normals[valid_normals] /= normal_lengths[valid_normals, None]
+    rejected = np.zeros(point_count, dtype=bool)
+    class_reports: dict[str, dict[str, Any]] = {}
+
+    for class_id, class_vote_values in class_votes.items():
+        object_votes = np.asarray(class_vote_values)
+        plant_votes = np.asarray(class_plant_votes[class_id])
+        if object_votes.shape != (point_count,):
+            raise ValueError(
+                f"{class_id} object votes must have shape ({point_count},)"
+            )
+        if plant_votes.shape != (point_count,):
+            raise ValueError(
+                f"{class_id} plant votes must have shape ({point_count},)"
+            )
+        confirmed = (
+            seed_mask
+            & (object_votes >= parameters.minimum_object_votes)
+            & (object_votes >= plant_votes)
+        )
+        seed_points = coordinates[confirmed]
+        class_rejected = np.zeros(point_count, dtype=bool)
+        surface_reports: list[dict[str, Any]] = []
+
+        if len(seed_points) >= parameters.minimum_surface_seed_points:
+            fit_points = seed_points
+            center = np.median(fit_points, axis=0)
+            for _ in range(parameters.fit_iterations):
+                centered = fit_points - center
+                covariance = centered.T @ centered / len(fit_points)
+                values, vectors = np.linalg.eigh(covariance)
+                normal = vectors[:, np.argmin(values)]
+                distances = np.abs((fit_points - center) @ normal)
+                cutoff = np.quantile(
+                    distances,
+                    parameters.fit_trim_quantile,
+                )
+                fit_points = fit_points[distances <= cutoff]
+                center = np.median(fit_points, axis=0)
+
+            centered = fit_points - center
+            covariance = centered.T @ centered / len(fit_points)
+            values, vectors = np.linalg.eigh(covariance)
+            order = np.argsort(values)
+            normal = vectors[:, order[0]]
+            axes = vectors[:, order[1:]]
+            seed_projection = (fit_points - center) @ axes
+            bounds = np.quantile(
+                seed_projection,
+                (0.005, 0.995),
+                axis=0,
+            )
+            spans = bounds[1] - bounds[0]
+            fit_distances = np.abs((fit_points - center) @ normal)
+            planar = (
+                float(np.quantile(fit_distances, 0.95))
+                <= parameters.plane_distance
+            )
+            if (
+                planar
+                and float(spans.max()) >= parameters.minimum_surface_span
+            ):
+                projected = (coordinates - center) @ axes
+                inside = np.all(
+                    (
+                        projected
+                        >= bounds[0] - parameters.bounds_margin
+                    )
+                    & (
+                        projected
+                        <= bounds[1] + parameters.bounds_margin
+                    ),
+                    axis=1,
+                )
+                distance = np.abs((coordinates - center) @ normal)
+                alignment = np.abs(normalized_normals @ normal)
+                strong_plant = plant_votes.astype(np.int16) >= (
+                    object_votes.astype(np.int16)
+                    + parameters.strong_plant_margin
+                )
+                class_rejected = (
+                    candidate_mask
+                    & inside
+                    & (distance <= parameters.plane_distance)
+                    & valid_normals
+                    & (alignment >= parameters.normal_alignment_min)
+                    & ~strong_plant
+                )
+                surface_reports.append(
+                    {
+                        "center": center.tolist(),
+                        "normal": normal.tolist(),
+                        "spans": spans.tolist(),
+                        "seed_point_count": int(len(seed_points)),
+                        "fit_point_count": int(len(fit_points)),
+                        "seed_distance_95": float(
+                            np.quantile(fit_distances, 0.95)
+                        ),
+                        "completed_point_count": int(
+                            class_rejected.sum()
+                        ),
+                    }
+                )
+
+        rejected |= class_rejected
+        class_reports[class_id] = {
+            "schema_version": 1,
+            "parameters": asdict(parameters),
+            "candidate_point_count": int(candidate_mask.sum()),
+            "seed_candidate_point_count": int(seed_mask.sum()),
+            "confirmed_seed_count": int(confirmed.sum()),
+            "accepted_surface_count": len(surface_reports),
+            "completed_point_count": int(class_rejected.sum()),
+            "surfaces": surface_reports,
+        }
+
+    return rejected, {
+        "schema_version": 1,
+        "strategy": "semantic-seeded-ground-surfaces-v1",
+        "class_count": len(class_reports),
+        "completed_point_count": int(rejected.sum()),
+        "classes": class_reports,
+    }
 
 
 def remove_uncertain_floor(
