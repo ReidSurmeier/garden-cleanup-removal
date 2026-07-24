@@ -32,6 +32,7 @@ class GroundSurfaceCompletionParameters:
     ransac_iterations: int = 500
     random_seed: int = 172629
     plane_distance: float = 0.50
+    unaligned_plane_distance: float = 0.12
     bounds_margin: float = 0.50
     normal_alignment_min: float = 0.55
     strong_plant_margin: int = 2
@@ -87,6 +88,8 @@ def complete_ground_surface_classes(
     seed_mask: np.ndarray | None,
     class_votes: Mapping[str, np.ndarray],
     class_plant_votes: Mapping[str, np.ndarray],
+    protection_plant_votes: np.ndarray | None = None,
+    protection_background_votes: np.ndarray | None = None,
     parameters: GroundSurfaceCompletionParameters | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Complete raised or sloped ground planes from semantic class evidence."""
@@ -108,6 +111,22 @@ def complete_ground_surface_classes(
     )
     if seed_mask.shape != (point_count,):
         raise ValueError(f"seed_mask must have shape ({point_count},)")
+    protection_plant_votes = (
+        np.zeros(point_count, dtype=np.uint8)
+        if protection_plant_votes is None
+        else np.asarray(protection_plant_votes)
+    )
+    protection_background_votes = (
+        np.zeros(point_count, dtype=np.uint8)
+        if protection_background_votes is None
+        else np.asarray(protection_background_votes)
+    )
+    for name, values in (
+        ("protection_plant_votes", protection_plant_votes),
+        ("protection_background_votes", protection_background_votes),
+    ):
+        if values.shape != (point_count,):
+            raise ValueError(f"{name} must have shape ({point_count},)")
     if not class_votes:
         raise ValueError("at least one ground-surface class is required")
     if set(class_votes) != set(class_plant_votes):
@@ -151,6 +170,10 @@ def complete_ground_surface_classes(
         rng = np.random.default_rng(parameters.random_seed)
         strong_plant = plant_votes.astype(np.int16) >= (
             object_votes.astype(np.int16)
+            + parameters.strong_plant_margin
+        )
+        strong_plant |= protection_plant_votes.astype(np.int16) >= (
+            protection_background_votes.astype(np.int16)
             + parameters.strong_plant_margin
         )
 
@@ -243,20 +266,29 @@ def complete_ground_surface_classes(
                 class_exclusive_ground = (
                     object_votes >= parameters.minimum_object_votes
                 ) & (object_votes > plant_votes)
+                geometry_or_evidence = (
+                    (
+                        distance
+                        <= parameters.unaligned_plane_distance
+                    )
+                    | (
+                        (distance <= parameters.plane_distance)
+                        & (
+                            (
+                                valid_normals
+                                & (
+                                    alignment
+                                    >= parameters.normal_alignment_min
+                                )
+                            )
+                            | class_exclusive_ground
+                        )
+                    )
+                )
                 surface_rejected = (
                     candidate_mask
                     & inside
-                    & (distance <= parameters.plane_distance)
-                    & (
-                        (
-                            valid_normals
-                            & (
-                                alignment
-                                >= parameters.normal_alignment_min
-                            )
-                        )
-                        | class_exclusive_ground
-                    )
+                    & geometry_or_evidence
                     & ~strong_plant
                 )
                 newly_completed = surface_rejected & ~class_rejected

@@ -391,6 +391,8 @@ def run_full_cleanup(
                     )
                     for class_id in ground_surface_classes
                 },
+                protection_plant_votes=generic_plant_votes,
+                protection_background_votes=generic_background_votes,
             )
         )
         floor_keep &= ~ground_surface_reject

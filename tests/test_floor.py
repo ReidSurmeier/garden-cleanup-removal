@@ -316,3 +316,61 @@ def test_class_exclusive_turf_evidence_overrides_noisy_ground_normals() -> None:
 
     assert rejected[: len(ground)][~evidence_mask[: len(ground)]].all()
     assert not rejected[-1]
+
+
+def test_tightly_coplanar_unseen_turf_is_removed_with_generic_root_protection(
+) -> None:
+    ground = np.array(
+        [
+            (float(x), float(y), 0.02 * float((x + y) % 3))
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=np.float64,
+    )
+    root = np.array([(4.0, 3.0, 0.04)], dtype=np.float64)
+    raised_structure = np.array([(4.0, 3.0, 0.30)], dtype=np.float64)
+    coordinates = np.vstack((ground, root, raised_structure))
+    normals = np.tile((1.0, 0.0, 0.0), (len(coordinates), 1))
+    evidence_mask = np.zeros(len(coordinates), dtype=bool)
+    evidence_mask[: len(ground)] = np.array(
+        [
+            x % 2 == 0 or y in {0, 5}
+            for x in range(8)
+            for y in range(6)
+        ],
+        dtype=bool,
+    )
+    normals[evidence_mask] = (0.0, 0.0, 1.0)
+    object_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    object_votes[evidence_mask] = 2
+    protection_plant = np.zeros(len(coordinates), dtype=np.uint8)
+    protection_plant[-2] = 5
+
+    rejected, _ = complete_ground_surface_classes(
+        coordinates,
+        normals=normals,
+        candidate_mask=~evidence_mask,
+        seed_mask=evidence_mask,
+        class_votes={"turf_ground": object_votes},
+        class_plant_votes={
+            "turf_ground": np.zeros(len(coordinates), dtype=np.uint8)
+        },
+        protection_plant_votes=protection_plant,
+        protection_background_votes=np.zeros(
+            len(coordinates),
+            dtype=np.uint8,
+        ),
+        parameters=GroundSurfaceCompletionParameters(
+            minimum_surface_seed_points=8,
+            minimum_surface_span=1.0,
+            seed_inlier_distance=0.10,
+            plane_distance=0.50,
+            unaligned_plane_distance=0.12,
+            ransac_iterations=300,
+            random_seed=29,
+        ),
+    )
+
+    assert rejected[: len(ground)][~evidence_mask[: len(ground)]].all()
+    assert not rejected[-2:].any()
