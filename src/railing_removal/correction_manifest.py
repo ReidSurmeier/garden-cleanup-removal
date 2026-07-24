@@ -157,6 +157,7 @@ def build_targeted_correction_manifest(
             unknown_override_keys = set(override) - {
                 "manual_seed_regions",
                 "line_completion_parameters",
+                "component_completion_parameters",
             }
             if unknown_override_keys:
                 raise ValueError(
@@ -169,6 +170,13 @@ def build_targeted_correction_manifest(
             ):
                 raise ValueError(
                     "line_completion_parameters must be an object"
+                )
+            if "component_completion_parameters" in override and not isinstance(
+                override["component_completion_parameters"],
+                dict,
+            ):
+                raise ValueError(
+                    "component_completion_parameters must be an object"
                 )
             object_class.update(copy.deepcopy(override))
             object_class["id"] = class_id

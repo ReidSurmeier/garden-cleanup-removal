@@ -4,7 +4,9 @@ import numpy as np
 
 from railing_removal import LineCompletionParameters, complete_railing_lines
 from railing_removal.completion import (
+    RigidComponentCompletionParameters,
     RigidSurfaceCompletionParameters,
+    complete_rigid_component_classes,
     complete_rigid_line_classes,
     complete_rigid_surface_classes,
 )
@@ -229,6 +231,66 @@ def test_source_relative_height_gate_excludes_ground_border_lines() -> None:
     assert rejected[len(ground_border) :].all()
     assert report["height_eligible_seed_count"] == 9
     assert report["accepted_line_count"] == 1
+
+
+def test_verified_component_grows_through_frame_but_not_ground_or_plant() -> None:
+    top_beam = np.array(
+        [(x, 0.0, 2.0) for x in np.linspace(-2.0, 2.0, 41)],
+        dtype=np.float64,
+    )
+    posts = np.array(
+        [
+            (x, 0.0, z)
+            for x in (-2.0, 2.0)
+            for z in np.linspace(0.3, 2.0, 18)
+        ],
+        dtype=np.float64,
+    )
+    ground_border = np.array(
+        [(x, 0.0, 0.0) for x in np.linspace(-2.0, 2.0, 41)],
+        dtype=np.float64,
+    )
+    plant = np.array(
+        [(0.0, 0.1, z) for z in np.linspace(0.3, 2.0, 18)],
+        dtype=np.float64,
+    )
+    coordinates = np.vstack((top_beam, posts, ground_border, plant))
+    frame_count = len(top_beam) + len(posts)
+    ground_start = frame_count
+    plant_start = ground_start + len(ground_border)
+    rgb = np.full((len(coordinates), 3), 100, dtype=np.uint8)
+    rgb[plant_start:] = (35, 160, 30)
+    seed_mask = np.zeros(len(coordinates), dtype=bool)
+    seed_mask[[0, 20, 40, 50, 68]] = True
+    object_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    object_votes[seed_mask] = 2
+    plant_votes = np.zeros(len(coordinates), dtype=np.uint8)
+    plant_votes[plant_start:] = 5
+
+    rejected, report = complete_rigid_component_classes(
+        coordinates,
+        rgb=rgb,
+        candidate_mask=np.ones(len(coordinates), dtype=bool),
+        seed_mask=seed_mask,
+        class_votes={"pavilion": object_votes},
+        class_plant_votes={"pavilion": plant_votes},
+        support_height=0.0,
+        parameters_by_class={
+            "pavilion": RigidComponentCompletionParameters(
+                minimum_seed_height_above_support=0.8,
+                minimum_completion_height_above_support=0.2,
+                voxel_size=0.25,
+                bounds_margin=0.2,
+            )
+        },
+    )
+
+    assert rejected[:frame_count].all()
+    assert not rejected[ground_start:plant_start].any()
+    assert not rejected[plant_start:].any()
+    assert report["classes"]["pavilion"]["completed_point_count"] == (
+        frame_count
+    )
 
 
 def test_rejected_fence_evidence_can_complete_remaining_candidate_points() -> None:

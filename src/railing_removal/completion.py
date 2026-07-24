@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
 import numpy as np
+from scipy import ndimage
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,21 @@ class RigidSurfaceCompletionParameters:
     completion_excess_green_max: float = 35.0
     completion_saturation_max: float = 0.45
     strong_plant_margin: int = 3
+
+
+@dataclass(frozen=True)
+class RigidComponentCompletionParameters:
+    minimum_object_votes: int = 1
+    seed_excess_green_max: float = 5.0
+    seed_saturation_max: float = 0.55
+    minimum_seed_height_above_support: float = 0.80
+    minimum_completion_height_above_support: float = 0.20
+    voxel_size: float = 0.30
+    bounds_margin: float = 0.50
+    completion_excess_green_max: float = 10.0
+    completion_saturation_max: float = 0.45
+    strong_plant_margin: int = 3
+    maximum_grid_voxels: int = 100_000_000
 
 
 def _validate_vector(name: str, values: np.ndarray, point_count: int) -> np.ndarray:
@@ -300,6 +316,176 @@ def complete_rigid_line_classes(
         "class_count": len(class_reports),
         "completed_point_count": int(rejected.sum()),
         "classes": class_reports,
+    }
+
+
+def _complete_rigid_component(
+    coordinates: np.ndarray,
+    *,
+    rgb: np.ndarray,
+    candidate_mask: np.ndarray,
+    seed_mask: np.ndarray,
+    object_votes: np.ndarray,
+    plant_votes: np.ndarray,
+    support_height: float,
+    parameters: RigidComponentCompletionParameters,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    if parameters.voxel_size <= 0:
+        raise ValueError("voxel_size must be positive")
+    if parameters.minimum_seed_height_above_support < 0:
+        raise ValueError(
+            "minimum_seed_height_above_support must be non-negative"
+        )
+    if parameters.minimum_completion_height_above_support < 0:
+        raise ValueError(
+            "minimum_completion_height_above_support must be non-negative"
+        )
+
+    excess_green = 2.0 * rgb[:, 1] - rgb[:, 0] - rgb[:, 2]
+    saturation = (rgb.max(axis=1) - rgb.min(axis=1)) / np.maximum(
+        rgb.max(axis=1),
+        1.0,
+    )
+    confirmed = (
+        seed_mask
+        & (object_votes >= parameters.minimum_object_votes)
+        & (object_votes > plant_votes)
+    )
+    structural = (
+        confirmed
+        & (excess_green <= parameters.seed_excess_green_max)
+        & (saturation <= parameters.seed_saturation_max)
+    )
+    elevated_seeds = structural & (
+        coordinates[:, 2]
+        >= support_height + parameters.minimum_seed_height_above_support
+    )
+    rejected = np.zeros(len(coordinates), dtype=bool)
+    if not elevated_seeds.any():
+        return rejected, {
+            "schema_version": 1,
+            "parameters": asdict(parameters),
+            "confirmed_seed_count": int(confirmed.sum()),
+            "structural_seed_count": int(structural.sum()),
+            "elevated_seed_count": 0,
+            "eligible_point_count": 0,
+            "completed_point_count": 0,
+            "status": "no_elevated_seeds",
+        }
+
+    seed_points = coordinates[elevated_seeds]
+    lower = seed_points.min(axis=0) - parameters.bounds_margin
+    upper = seed_points.max(axis=0) + parameters.bounds_margin
+    lower[2] = (
+        support_height
+        + parameters.minimum_completion_height_above_support
+    )
+    strong_plant = plant_votes.astype(np.int16) >= (
+        object_votes.astype(np.int16) + parameters.strong_plant_margin
+    )
+    eligible = (
+        candidate_mask
+        & (
+            coordinates[:, 2]
+            >= support_height
+            + parameters.minimum_completion_height_above_support
+        )
+        & np.all(coordinates >= lower, axis=1)
+        & np.all(coordinates <= upper, axis=1)
+        & (excess_green <= parameters.completion_excess_green_max)
+        & (saturation <= parameters.completion_saturation_max)
+        & ~strong_plant
+    )
+    eligible |= elevated_seeds
+    rows = np.flatnonzero(eligible)
+    selected = coordinates[rows]
+    grid_lower = selected.min(axis=0)
+    voxels = np.floor(
+        (selected - grid_lower) / parameters.voxel_size
+    ).astype(np.int32)
+    shape = tuple((voxels.max(axis=0) + 1).tolist())
+    grid_voxels = int(np.prod(shape, dtype=np.int64))
+    if grid_voxels > parameters.maximum_grid_voxels:
+        raise ValueError(
+            f"rigid component grid would contain {grid_voxels:,} cells"
+        )
+    occupancy = np.zeros(shape, dtype=bool)
+    occupancy[tuple(voxels.T)] = True
+    labels, component_count = ndimage.label(
+        occupancy,
+        structure=np.ones((3, 3, 3), dtype=bool),
+    )
+    point_labels = labels[tuple(voxels.T)]
+    seeded_labels = np.unique(point_labels[elevated_seeds[rows]])
+    seeded_labels = seeded_labels[seeded_labels != 0]
+    grown = np.isin(point_labels, seeded_labels)
+    rejected[rows[grown]] = True
+    return rejected, {
+        "schema_version": 1,
+        "parameters": asdict(parameters),
+        "confirmed_seed_count": int(confirmed.sum()),
+        "structural_seed_count": int(structural.sum()),
+        "elevated_seed_count": int(elevated_seeds.sum()),
+        "eligible_point_count": int(eligible.sum()),
+        "voxel_grid_shape": list(shape),
+        "occupied_voxel_count": int(occupancy.sum()),
+        "component_count": int(component_count),
+        "seeded_component_count": int(len(seeded_labels)),
+        "completed_point_count": int(rejected.sum()),
+        "status": "complete",
+    }
+
+
+def complete_rigid_component_classes(
+    coordinates: np.ndarray,
+    *,
+    rgb: np.ndarray,
+    candidate_mask: np.ndarray,
+    seed_mask: np.ndarray,
+    class_votes: Mapping[str, np.ndarray],
+    class_plant_votes: Mapping[str, np.ndarray],
+    support_height: float,
+    parameters_by_class: Mapping[
+        str, RigidComponentCompletionParameters
+    ] | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    if not class_votes:
+        raise ValueError("at least one rigid component class is required")
+    if set(class_votes) != set(class_plant_votes):
+        raise ValueError(
+            "rigid component object and plant vote classes must match"
+        )
+    unknown_parameters = set(parameters_by_class or {}) - set(class_votes)
+    if unknown_parameters:
+        raise ValueError(
+            "rigid component parameters reference unknown class: "
+            f"{sorted(unknown_parameters)[0]}"
+        )
+
+    rejected = np.zeros(len(coordinates), dtype=bool)
+    reports: dict[str, dict[str, Any]] = {}
+    for class_id, votes in class_votes.items():
+        class_rejected, report = _complete_rigid_component(
+            coordinates,
+            rgb=rgb,
+            candidate_mask=candidate_mask,
+            seed_mask=seed_mask,
+            object_votes=votes,
+            plant_votes=class_plant_votes[class_id],
+            support_height=support_height,
+            parameters=(parameters_by_class or {}).get(
+                class_id,
+                RigidComponentCompletionParameters(),
+            ),
+        )
+        rejected |= class_rejected
+        reports[class_id] = report
+    return rejected, {
+        "schema_version": 1,
+        "strategy": "source-verified-rigid-components-v1",
+        "class_count": len(reports),
+        "completed_point_count": int(rejected.sum()),
+        "classes": reports,
     }
 
 

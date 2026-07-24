@@ -76,6 +76,15 @@
           "completion_margin": 0.90,
           "max_lines": 60,
           "ransac_iterations": 5000
+        },
+        "component_completion_parameters": {
+          "minimum_seed_height_above_support": 0.80,
+          "minimum_completion_height_above_support": 0.20,
+          "voxel_size": 0.30,
+          "bounds_margin": 0.50,
+          "completion_excess_green_max": 10.0,
+          "completion_saturation_max": 0.45,
+          "strong_plant_margin": 3
         }
       }
     }

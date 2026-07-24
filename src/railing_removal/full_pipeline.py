@@ -47,6 +47,8 @@ from plant_cleanup.semantic_refine import SemanticParameters, refine_with_semant
 from plant_cleanup.web_preview import export_web_preview
 from railing_removal.completion import (
     LineCompletionParameters,
+    RigidComponentCompletionParameters,
+    complete_rigid_component_classes,
     complete_rigid_line_classes,
     complete_rigid_surface_classes,
 )
@@ -490,9 +492,15 @@ def run_full_cleanup(
         for class_id, object_class in plan_classes.items()
         if object_class.get("completion_strategy") == "rigid_surface"
     }
+    rigid_component_classes = {
+        class_id: object_class
+        for class_id, object_class in plan_classes.items()
+        if object_class.get("component_completion_parameters") is not None
+    }
     rigid_completion_classes = {
         **rigid_line_classes,
         **rigid_surface_classes,
+        **rigid_component_classes,
     }
     if rigid_completion_classes:
         progress("rigid-object-semantic-evidence")
@@ -561,6 +569,10 @@ def run_full_cleanup(
             "status": "skipped",
             "completed_point_count": 0,
         }
+        component_report: dict[str, Any] = {
+            "status": "skipped",
+            "completed_point_count": 0,
+        }
         if rigid_line_classes:
             progress("rigid-line-completion")
             line_parameters_by_class = {
@@ -589,6 +601,36 @@ def run_full_cleanup(
                 parameters_by_class=line_parameters_by_class,
             )
             railing_reject |= line_reject
+        if rigid_component_classes:
+            progress("rigid-component-completion")
+            component_reject, component_report = (
+                complete_rigid_component_classes(
+                    coordinates,
+                    rgb=rgb,
+                    candidate_mask=floor_keep,
+                    seed_mask=completion_seed_mask,
+                    class_votes={
+                        class_id: completion_class_votes[class_id]
+                        for class_id in rigid_component_classes
+                    },
+                    class_plant_votes={
+                        class_id: completion_class_plant_votes[class_id]
+                        for class_id in rigid_component_classes
+                    },
+                    support_height=support_height,
+                    parameters_by_class={
+                        class_id: RigidComponentCompletionParameters(
+                            **object_class.get(
+                                "component_completion_parameters",
+                                {},
+                            )
+                        )
+                        for class_id, object_class
+                        in rigid_component_classes.items()
+                    },
+                )
+            )
+            railing_reject |= component_reject
         if rigid_surface_classes:
             progress("rigid-surface-completion")
             surface_reject, surface_report = complete_rigid_surface_classes(
@@ -607,10 +649,11 @@ def run_full_cleanup(
             )
             railing_reject |= surface_reject
         completion_report = {
-            "schema_version": 2,
-            "strategy": "planned-rigid-geometry-completion-v2",
+            "schema_version": 3,
+            "strategy": "planned-rigid-geometry-completion-v3",
             "completed_point_count": int(railing_reject.sum()),
             "line_completion": line_report,
+            "component_completion": component_report,
             "surface_completion": surface_report,
         }
     else:
