@@ -191,3 +191,66 @@ def test_source_photo_cleanup_batch_prefers_additive_baseline_correction(
     )
 
     assert called_with == [corrected_scan.resolve()]
+
+
+def test_source_photo_cleanup_batch_accepts_targeted_correction_manifest(
+    tmp_path: Path,
+) -> None:
+    manifest = tmp_path / "targeted-corrections.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scans": [
+                    {"scan_id": "visual-failure"},
+                    {"scan_id": "second-visual-failure"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    for scan_id in ("visual-failure", "second-visual-failure"):
+        baseline_scan = tmp_path / "baseline" / scan_id
+        semantic_scan = tmp_path / "semantic" / scan_id
+        baseline_scan.mkdir(parents=True)
+        semantic_scan.mkdir(parents=True)
+        (baseline_scan / "run-report.json").write_text(
+            json.dumps({"source_opened_read_only": True}),
+            encoding="utf-8",
+        )
+        (semantic_scan / "report.json").write_text(
+            json.dumps({"project_opened_read_only": True}),
+            encoding="utf-8",
+        )
+
+    def cleanup(
+        baseline_scan: Path,
+        source_photo_scan: Path,
+        destination: Path,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        destination.mkdir()
+        report = {
+            "source_opened_read_only": True,
+            "counts": {"plant_cleaned": 1},
+        }
+        (destination / "run-report.json").write_text(
+            json.dumps(report),
+            encoding="utf-8",
+        )
+        return report
+
+    report = run_source_photo_cleanup_batch(
+        manifest,
+        tmp_path / "baseline",
+        tmp_path / "semantic",
+        output,
+        cleanup=cleanup,
+    )
+
+    assert report["summary"] == {
+        "complete": 2,
+        "partial": 0,
+        "failed": 0,
+    }

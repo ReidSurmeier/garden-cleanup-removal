@@ -11,12 +11,12 @@ Progress = Callable[[str], None]
 
 def _scan_ids(path: Path) -> list[str]:
     value = json.loads(path.resolve().read_text(encoding="utf-8"))
-    projects = value.get("projects")
-    if value.get("schema_version") != 1 or not isinstance(projects, list):
-        raise ValueError("invalid project manifest")
+    items = value.get("projects", value.get("scans"))
+    if value.get("schema_version") != 1 or not isinstance(items, list):
+        raise ValueError("invalid project or targeted correction manifest")
     scan_ids: list[str] = []
     seen: set[str] = set()
-    for item in projects:
+    for item in items:
         scan_id = str(item.get("scan_id", "")).strip()
         if not scan_id or scan_id in seen:
             raise ValueError("scan IDs must be nonempty and unique")
