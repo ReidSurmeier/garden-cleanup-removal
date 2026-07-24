@@ -115,3 +115,95 @@ def test_adaptive_batch_leaves_existing_partial_source_unmodified(
         )
 
     assert marker.read_bytes() == b"partial evidence"
+
+
+def test_adaptive_batch_materializes_scan_bound_scene_plans(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "a.psx"
+    project.write_text("source", encoding="utf-8")
+    projects = tmp_path / "projects.json"
+    _project_manifest(projects, [("scan-a", project)])
+    canonical = tmp_path / "canonical" / "scan-a"
+    canonical.mkdir(parents=True)
+    (canonical / "source-stride8-zup.ply").write_bytes(b"cloud")
+    base_config = tmp_path / "base.json"
+    base_config.write_text("{}\n", encoding="utf-8")
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "plant_prompt": "complete plants including roots",
+                "classes": {
+                    "railing": {
+                        "prompt": "rigid metal railing",
+                        "distractor_prompt": "branches roots and stems",
+                        "anchor_strategy": "semantic",
+                        "decision_policy": "class_exclusive_background",
+                        "background_depth_fraction": 0.006,
+                        "background_anchor_limit": 12,
+                        "required_segmented_views": 1,
+                    }
+                },
+                "assignments": {"scan-a": ["railing"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "profiles"
+    build_adaptive_batch(
+        projects,
+        tmp_path / "canonical",
+        output,
+        base_config,
+        stride=8,
+        scene_catalog_path=catalog,
+        config_builder=lambda *_: {},
+    )
+
+    manifest = json.loads(
+        (output / "cleanup-manifest.json").read_text(encoding="utf-8")
+    )
+    plan_path = Path(manifest["scans"][0]["scene_plan"])
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert plan["scan_id"] == "scan-a"
+    assert [value["id"] for value in plan["classes"]] == ["railing"]
+
+
+def test_adaptive_batch_rejects_catalog_assignments_outside_manifest(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "a.psx"
+    project.write_text("source", encoding="utf-8")
+    projects = tmp_path / "projects.json"
+    _project_manifest(projects, [("scan-a", project)])
+    canonical = tmp_path / "canonical" / "scan-a"
+    canonical.mkdir(parents=True)
+    (canonical / "source-stride8-zup.ply").write_bytes(b"cloud")
+    base_config = tmp_path / "base.json"
+    base_config.write_text("{}\n", encoding="utf-8")
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "plant_prompt": "plants",
+                "classes": {"railing": {"prompt": "railing"}},
+                "assignments": {"not-a-scan": ["railing"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown scan"):
+        build_adaptive_batch(
+            projects,
+            tmp_path / "canonical",
+            tmp_path / "profiles",
+            base_config,
+            stride=8,
+            scene_catalog_path=catalog,
+            config_builder=lambda *_: {},
+        )
