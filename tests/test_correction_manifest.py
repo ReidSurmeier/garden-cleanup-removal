@@ -70,9 +70,10 @@ def test_builds_additive_manifest_for_every_noncomplete_baseline_scan(
         "scan_id": "partial",
         "source": "F:\\clouds\\partial.ply",
         "config": "F:\\configs\\partial.json",
+        "scene_plan": "F:\\plans\\partial.json",
         "review_artifacts": False,
     }
-    assert "scene_plan" not in result["scans"][1]
+    assert result["scans"][1]["scene_plan"] == "F:\\plans\\failed.json"
     assert json.loads(output.read_text(encoding="utf-8")) == result
 
 

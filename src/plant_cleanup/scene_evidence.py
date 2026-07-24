@@ -13,7 +13,7 @@ from plant_cleanup.sam2_votes import Predictor as Sam2Predictor
 from plant_cleanup.sam2_votes import aggregate_sam2_votes
 
 
-CLASS_ID = re.compile(r"^[a-z][a-z0-9-]*$")
+CLASS_ID = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 def _create_scene_output_dir(output_dir: Path) -> Path:

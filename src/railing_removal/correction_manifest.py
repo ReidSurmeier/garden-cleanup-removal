@@ -17,7 +17,7 @@ def build_correction_manifest(
     baseline_report_path: Path,
     output_path: Path,
 ) -> dict[str, Any]:
-    """Select all unfinished baseline scans without legacy scene plans."""
+    """Select unfinished scans while preserving assigned object evidence."""
     output_path = output_path.resolve()
     if output_path.exists():
         raise FileExistsError(output_path)
@@ -47,14 +47,15 @@ def build_correction_manifest(
             raise ValueError(
                 f"baseline report references unknown scan: {scan_id}"
             )
-        corrections.append(
-            {
-                "scan_id": scan_id,
-                "source": str(source["source"]),
-                "config": str(source["config"]),
-                "review_artifacts": False,
-            }
-        )
+        correction = {
+            "scan_id": scan_id,
+            "source": str(source["source"]),
+            "config": str(source["config"]),
+            "review_artifacts": False,
+        }
+        if source.get("scene_plan") is not None:
+            correction["scene_plan"] = str(source["scene_plan"])
+        corrections.append(correction)
     if not corrections:
         raise ValueError("baseline report has no scans requiring correction")
 
