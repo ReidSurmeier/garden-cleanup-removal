@@ -210,6 +210,13 @@ def test_final_reference_review_assigns_only_verified_ground_and_structure(
             / "visual-qa-corrections-reference-review-202607-sf.json"
         ).read_text(encoding="utf-8")
     )
+    retry = json.loads(
+        (
+            repository
+            / "configs"
+            / "visual-qa-corrections-reference-retry-202607-sf.json"
+        ).read_text(encoding="utf-8")
+    )
 
     assert catalog["classes"]["fence"]["completion_strategy"] == "rigid_surface"
     assert corrections["assignments"] == {
@@ -230,3 +237,7 @@ def test_final_reference_review_assigns_only_verified_ground_and_structure(
             "2026-07-17 12.55.23",
         }
     )
+    assert retry["assignments"] == {
+        "2026-07-16 09.44.32": ["turf_ground"],
+        "2026-07-17 12.17.25": ["turf_ground", "fence"],
+    }
