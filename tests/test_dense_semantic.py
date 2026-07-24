@@ -6,6 +6,7 @@ from plant_cleanup.dense_semantic import (
     DensePropagationParameters,
     build_scene_plant_protection,
     propagate_dense_semantic_evidence,
+    select_scene_dense_rejects,
     select_dense_plant_labels,
 )
 
@@ -118,3 +119,19 @@ def test_scene_plant_protection_requires_a_strong_class_margin() -> None:
     )
 
     assert protection.tolist() == [True, False, True, False]
+
+
+def test_ground_scene_persists_dense_background_rejections() -> None:
+    candidate = np.array([True, True, True, False], dtype=bool)
+    strict_keep = np.array([True, False, True, False], dtype=bool)
+
+    assert select_scene_dense_rejects(
+        candidate,
+        strict_keep,
+        has_ground_surface=True,
+    ).tolist() == [False, True, False, False]
+    assert not select_scene_dense_rejects(
+        candidate,
+        strict_keep,
+        has_ground_surface=False,
+    ).any()

@@ -26,6 +26,7 @@ from plant_cleanup.dense_semantic import (
     build_scene_plant_protection,
     propagate_dense_semantic_evidence,
     select_dense_plant_labels,
+    select_scene_dense_rejects,
 )
 from plant_cleanup.geometry_cleanup import (
     CleanupParameters,
@@ -462,10 +463,10 @@ def run_full_cleanup(
             dense_dir / "propagation-report.json",
             propagation_report,
         )
-        scene_dense_reject = (
-            floor_keep & ~strict_keep
-            if "turf_ground" in ground_surface_classes
-            else np.zeros(len(cloud), dtype=bool)
+        scene_dense_reject = select_scene_dense_rejects(
+            floor_keep,
+            strict_keep,
+            has_ground_surface=bool(ground_surface_classes),
         )
     else:
         strict_keep = floor_keep.copy()

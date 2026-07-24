@@ -104,6 +104,22 @@ def build_scene_plant_protection(
     return protection
 
 
+def select_scene_dense_rejects(
+    candidate_mask: np.ndarray,
+    strict_keep: np.ndarray,
+    *,
+    has_ground_surface: bool,
+) -> np.ndarray:
+    """Persist dense rejects when a scene explicitly defines ground."""
+    candidate_mask = np.asarray(candidate_mask, dtype=bool)
+    strict_keep = np.asarray(strict_keep, dtype=bool)
+    if candidate_mask.ndim != 1 or strict_keep.shape != candidate_mask.shape:
+        raise ValueError("candidate and strict masks must be matching vectors")
+    if not has_ground_surface:
+        return np.zeros(len(candidate_mask), dtype=bool)
+    return candidate_mask & ~strict_keep
+
+
 def aggregate_dense_semantic_votes(
     cloud_path: Path,
     render_dir: Path,
