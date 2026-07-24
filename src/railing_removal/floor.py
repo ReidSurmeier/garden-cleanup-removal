@@ -168,11 +168,11 @@ def complete_ground_surface_classes(
         surface_reports: list[dict[str, Any]] = []
         remaining_seed_points = seed_points
         rng = np.random.default_rng(parameters.random_seed)
-        strong_plant = plant_votes.astype(np.int16) >= (
+        class_strong_plant = plant_votes.astype(np.int16) >= (
             object_votes.astype(np.int16)
             + parameters.strong_plant_margin
         )
-        strong_plant |= protection_plant_votes.astype(np.int16) >= (
+        generic_strong_plant = protection_plant_votes.astype(np.int16) >= (
             protection_background_votes.astype(np.int16)
             + parameters.strong_plant_margin
         )
@@ -263,6 +263,16 @@ def complete_ground_surface_classes(
                 )
                 distance = np.abs((coordinates - center) @ normal)
                 alignment = np.abs(normalized_normals @ normal)
+                protected_plant_structure = class_strong_plant | (
+                    generic_strong_plant
+                    & (
+                        ~valid_normals
+                        | (
+                            alignment
+                            < parameters.normal_alignment_min
+                        )
+                    )
+                )
                 class_exclusive_ground = (
                     object_votes >= parameters.minimum_object_votes
                 ) & (object_votes > plant_votes)
@@ -289,7 +299,7 @@ def complete_ground_surface_classes(
                     candidate_mask
                     & inside
                     & geometry_or_evidence
-                    & ~strong_plant
+                    & ~protected_plant_structure
                 )
                 newly_completed = surface_rejected & ~class_rejected
                 class_rejected |= surface_rejected
