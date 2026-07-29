@@ -116,12 +116,17 @@ def _point_renderer(
     sphere.inputs["Radius"].default_value = radius
     sphere.inputs["Subdivisions"].default_value = 1
     instances = tree.nodes.new("GeometryNodeInstanceOnPoints")
+    realize = tree.nodes.new("GeometryNodeRealizeInstances")
     set_material = tree.nodes.new("GeometryNodeSetMaterial")
     set_material.inputs["Material"].default_value = material
     tree.links.new(input_node.outputs["Geometry"], points.inputs["Mesh"])
     tree.links.new(points.outputs["Points"], instances.inputs["Points"])
     tree.links.new(sphere.outputs["Mesh"], instances.inputs["Instance"])
-    tree.links.new(instances.outputs["Instances"], set_material.inputs["Geometry"])
+    # Realizing transfers each source point's named color attribute onto its
+    # sphere vertices.  Without this step the material sees no `Col` value and
+    # Blender renders every instance black.
+    tree.links.new(instances.outputs["Instances"], realize.inputs["Geometry"])
+    tree.links.new(realize.outputs["Geometry"], set_material.inputs["Geometry"])
     tree.links.new(set_material.outputs["Geometry"], output_node.inputs["Geometry"])
 
 
