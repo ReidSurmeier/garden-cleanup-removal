@@ -49,9 +49,13 @@ Production root:
 
 `F:\3d_scans\scans\2026\202607_sf`
 
-The only allowed writable path shape is:
+The cleanup source path is read-only:
 
 `F:\3d_scans\scans\2026\202607_sf\<scan-directory>\plant-cleaned-garden-ec2fbd1-final-v2.ply`
+
+The only permanent path the normalizer may create is:
+
+`F:\3d_scans\scans\2026\202607_sf\<scan-directory>\plant-cleaned-garden-ec2fbd1-final-v2-orientation-corrected-v1.ply`
 
 The July 29 read-only preflight found 251 scan directories and 237 existing
 files with that exact generated-cleanup filename. Missing generated outputs are
@@ -60,17 +64,17 @@ reported; the normalizer does not create substitutes.
 The updater must refuse to run unless all of these checks pass:
 
 - The resolved production root exactly matches the configured root.
-- The target is an existing regular file.
-- The target's parent is a direct child of the production root.
-- The target filename exactly matches the generated-cleanup filename.
-- Neither the target nor its parent is a symlink or Windows reparse point.
+- The cleanup source is an existing regular file.
+- The cleanup source's parent is a direct child of the production root.
+- The source filename exactly matches the generated-cleanup filename.
+- Neither the source nor its parent is a symlink or Windows reparse point.
 - The PLY schema matches the cleanup output contract.
-- The file does not already contain this normalization version marker.
+- The corrected output does not already exist.
 - The supplied SD validation report says `passed` and matches the running
   normalization version.
 
-The updater may create one uniquely named temporary file beside the target
-while it works. This is not a permanent normalized copy. Before replacement it
+The writer may create one uniquely named temporary file beside the destination
+while it works. Before publishing it
 must validate:
 
 - equal point counts;
@@ -78,12 +82,12 @@ must validate:
 - finite transformed coordinates and normals;
 - a uniform, right-handed transform;
 - a readable complete PLY;
-- no mutation outside the temporary path.
+- no mutation outside the temporary and final corrected-output paths.
 
-After validation, the updater atomically replaces the same generated-cleanup
-filename and removes any temporary residue. It does not retain a backup PLY or
-create a second normalized PLY. The transform and original checksum are stored
-as comments inside the replacement PLY so repeat application is rejected.
+After validation, the writer atomically creates the corrected-output filename
+and removes any temporary residue. The generated cleanup source remains
+byte-for-byte unchanged. Existing corrected outputs are never replaced;
+reprocessing requires a new explicit versioned filename after review.
 
 ## Files that must never change
 
@@ -93,9 +97,9 @@ The production updater must not write, rename, move, or delete:
 - source videos;
 - `.psx`, `.psz`, or Metashape `.files` project data;
 - original or intermediate point clouds;
+- `plant-cleaned-garden-ec2fbd1-final-v2.ply`;
 - scan directories;
-- any PLY whose name is not
-  `plant-cleaned-garden-ec2fbd1-final-v2.ply`;
+- any existing PLY;
 - any file outside the production root.
 
 Review screenshots and reports remain outside the production scan tree. They
@@ -107,10 +111,10 @@ Before a batch, capture a read-only inventory of every path, size, modified
 time, and attributes beneath the production root. After the batch:
 
 1. Compare the inventories.
-2. Require every changed path to match the exact writable path shape.
-3. Require the changed-path count to equal the successful target count.
-4. Require no added or removed paths.
-5. Re-read every replaced PLY and verify its embedded normalization marker.
+2. Require every added path to match the exact corrected-output path shape.
+3. Require the added-path count to equal the successful target count.
+4. Require no changed or removed paths.
+5. Re-read every corrected PLY and verify its checksum and source identity.
 6. Render the batch for visual review before continuing.
 
 Start with a small checkpoint batch. Continue only when its invariant checks

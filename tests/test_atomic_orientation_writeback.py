@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from railing_removal.atomic_orientation_writeback import (
+    CORRECTED_CLEANED_PLY,
     replace_cleaned_ply_atomically,
+    write_corrected_ply_atomically,
 )
 
 
@@ -80,3 +82,56 @@ def test_atomic_writeback_refuses_any_other_source_filename(
             expected_source_sha256=_sha256(source),
             expected_candidate_sha256=_sha256(candidate),
         )
+
+
+def test_corrected_output_is_created_without_changing_cleanup_source(
+    tmp_path: Path,
+) -> None:
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    source = scan_dir / "plant-cleaned-garden-ec2fbd1-final-v2.ply"
+    source.write_bytes(b"source-cleaned-ply")
+    candidate = tmp_path / "reviewed-candidate.ply"
+    candidate.write_bytes(b"orientation-corrected-ply")
+    sentinel = scan_dir / "source-photo.png"
+    sentinel.write_bytes(b"must-not-change")
+    destination = scan_dir / CORRECTED_CLEANED_PLY
+
+    report = write_corrected_ply_atomically(
+        source=source,
+        candidate=candidate,
+        destination=destination,
+        expected_source_sha256=_sha256(source),
+        expected_candidate_sha256=_sha256(candidate),
+    )
+
+    assert source.read_bytes() == b"source-cleaned-ply"
+    assert destination.read_bytes() == b"orientation-corrected-ply"
+    assert sentinel.read_bytes() == b"must-not-change"
+    assert report["source_unchanged"] is True
+    assert report["installed_sha256"] == _sha256(candidate)
+
+
+def test_corrected_output_refuses_to_overwrite_an_existing_result(
+    tmp_path: Path,
+) -> None:
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    source = scan_dir / "plant-cleaned-garden-ec2fbd1-final-v2.ply"
+    source.write_bytes(b"source")
+    candidate = tmp_path / "candidate.ply"
+    candidate.write_bytes(b"candidate")
+    destination = scan_dir / CORRECTED_CLEANED_PLY
+    destination.write_bytes(b"existing-corrected-output")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_corrected_ply_atomically(
+            source=source,
+            candidate=candidate,
+            destination=destination,
+            expected_source_sha256=_sha256(source),
+            expected_candidate_sha256=_sha256(candidate),
+        )
+
+    assert source.read_bytes() == b"source"
+    assert destination.read_bytes() == b"existing-corrected-output"

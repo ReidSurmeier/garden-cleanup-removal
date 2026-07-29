@@ -9,6 +9,9 @@ from uuid import uuid4
 
 
 PROTECTED_CLEANED_PLY = "plant-cleaned-garden-ec2fbd1-final-v2.ply"
+CORRECTED_CLEANED_PLY = (
+    "plant-cleaned-garden-ec2fbd1-final-v2-orientation-corrected-v1.ply"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -79,4 +82,66 @@ def replace_cleaned_ply_atomically(
         "backup_sha256": backup_sha256,
         "installed_sha256": installed_sha256,
         "only_protected_cleaned_ply_replaced": True,
+    }
+
+
+def write_corrected_ply_atomically(
+    *,
+    source: Path,
+    candidate: Path,
+    destination: Path,
+    expected_source_sha256: str,
+    expected_candidate_sha256: str,
+) -> dict[str, Any]:
+    """Install a reviewed correction beside an unchanged cleanup source."""
+
+    source = source.resolve()
+    candidate = candidate.resolve()
+    destination = destination.resolve()
+    if source.name != PROTECTED_CLEANED_PLY:
+        raise ValueError("source is not the protected cleaned PLY filename")
+    if destination.name != CORRECTED_CLEANED_PLY:
+        raise ValueError("destination is not the corrected PLY filename")
+    if destination.parent != source.parent:
+        raise ValueError("corrected output must be beside its cleanup source")
+    if source == candidate or source == destination or candidate == destination:
+        raise ValueError("source, candidate, and destination must be distinct")
+    if not source.is_file() or not candidate.is_file():
+        raise FileNotFoundError("source and candidate must both exist")
+    if destination.exists():
+        raise FileExistsError(
+            f"corrected output already exists: {destination}"
+        )
+
+    source_sha256 = _sha256(source)
+    if source_sha256 != expected_source_sha256:
+        raise ValueError("source hash changed since candidate generation")
+    candidate_sha256 = _sha256(candidate)
+    if candidate_sha256 != expected_candidate_sha256:
+        raise ValueError("candidate hash changed since verification")
+
+    temporary = destination.with_name(
+        f".{destination.name}.orientation-{uuid4().hex}.partial"
+    )
+    try:
+        shutil.copy2(candidate, temporary)
+        if _sha256(temporary) != candidate_sha256:
+            raise OSError("same-volume candidate copy verification failed")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    installed_sha256 = _sha256(destination)
+    if installed_sha256 != candidate_sha256:
+        raise OSError("installed corrected output verification failed")
+    if _sha256(source) != source_sha256:
+        raise OSError("cleanup source changed while writing corrected output")
+    return {
+        "schema_version": 1,
+        "status": "created",
+        "source": str(source),
+        "destination": str(destination),
+        "candidate": str(candidate),
+        "source_sha256": source_sha256,
+        "installed_sha256": installed_sha256,
+        "source_unchanged": True,
     }

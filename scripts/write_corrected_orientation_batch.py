@@ -13,8 +13,9 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY / "src"))
 
 from railing_removal.atomic_orientation_writeback import (  # noqa: E402
+    CORRECTED_CLEANED_PLY,
     PROTECTED_CLEANED_PLY,
-    replace_cleaned_ply_atomically,
+    write_corrected_ply_atomically,
 )
 
 
@@ -30,11 +31,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _non_target_file_hashes(scan_dir: Path) -> dict[str, str]:
+def _file_hashes(scan_dir: Path) -> dict[str, str]:
     return {
         path.name: _sha256(path)
         for path in sorted(scan_dir.iterdir(), key=lambda item: item.name)
-        if path.is_file() and path.name != PROTECTED_CLEANED_PLY
+        if path.is_file()
     }
 
 
@@ -52,28 +53,27 @@ def _write_journal(path: Path, value: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 4:
         raise SystemExit(
-            "usage: apply_selected_orientation_batch.py "
-            "PROJECTS.json SELECTED_REVIEW_ROOT BACKUP_ROOT "
-            "WRITEBACK_REPORT.json"
+            "usage: write_corrected_orientation_batch.py "
+            "PROJECTS.json SELECTED_REVIEW_ROOT WRITE_REPORT.json"
         )
     manifest_path = Path(sys.argv[1]).resolve()
     review_root = Path(sys.argv[2]).resolve()
-    backup_root = Path(sys.argv[3]).resolve()
-    report_path = Path(sys.argv[4]).resolve()
+    report_path = Path(sys.argv[3]).resolve()
     if report_path.exists():
-        raise FileExistsError(f"writeback report already exists: {report_path}")
+        raise FileExistsError(f"write report already exists: {report_path}")
     manifest = _read_json(manifest_path)
+
     planned: list[dict[str, Any]] = []
     for item in manifest["projects"]:
         scan_id = str(item["scan_id"])
         scan_dir = Path(item["project"]).resolve().parent
         source = scan_dir / PROTECTED_CLEANED_PLY
+        destination = scan_dir / CORRECTED_CLEANED_PLY
         review = _read_json(review_root / scan_id / "review-report.json")
         layer = review["candidate_layer"]
         candidate = Path(layer["normalized"]).resolve()
-        backup = backup_root / scan_id / PROTECTED_CLEANED_PLY
         if Path(review["source_cleaned_ply"]).resolve() != source:
             raise ValueError(f"{scan_id} review source path mismatch")
         if not candidate.is_relative_to(review_root):
@@ -85,54 +85,59 @@ def main() -> None:
         if not bool(layer["source_identity_preserved"]):
             raise ValueError(f"{scan_id} source identity was not preserved")
         if _sha256(source) != layer["source_sha256"]:
-            raise ValueError(f"{scan_id} source changed before writeback")
+            raise ValueError(f"{scan_id} cleanup source changed")
         if _sha256(candidate) != layer["normalized_sha256"]:
-            raise ValueError(f"{scan_id} candidate changed before writeback")
-        if backup.exists():
-            raise FileExistsError(f"{scan_id} backup already exists")
+            raise ValueError(f"{scan_id} reviewed candidate changed")
+        if destination.exists():
+            raise FileExistsError(
+                f"{scan_id} corrected output already exists"
+            )
         planned.append(
             {
                 "scan_id": scan_id,
                 "source": str(source),
                 "candidate": str(candidate),
-                "backup": str(backup),
-                "expected_source_sha256": layer["source_sha256"],
-                "expected_candidate_sha256": layer["normalized_sha256"],
+                "destination": str(destination),
+                "source_sha256": layer["source_sha256"],
+                "candidate_sha256": layer["normalized_sha256"],
                 "point_count": int(layer["source_point_count"]),
-                "non_target_files_before": _non_target_file_hashes(scan_dir),
+                "files_before": _file_hashes(scan_dir),
                 "status": "preflight_passed",
             }
         )
-    journal = {
+
+    journal: dict[str, Any] = {
         "schema_version": 1,
         "manifest": str(manifest_path),
         "review_root": str(review_root),
-        "backup_root": str(backup_root),
         "preflight_complete_before_mutation": True,
-        "allowed_source_filename": PROTECTED_CLEANED_PLY,
+        "source_filename": PROTECTED_CLEANED_PLY,
+        "corrected_filename": CORRECTED_CLEANED_PLY,
         "results": planned,
     }
     _write_journal(report_path, journal)
     for item in journal["results"]:
-        result = replace_cleaned_ply_atomically(
+        result = write_corrected_ply_atomically(
             source=Path(item["source"]),
             candidate=Path(item["candidate"]),
-            backup=Path(item["backup"]),
-            expected_source_sha256=item["expected_source_sha256"],
-            expected_candidate_sha256=item["expected_candidate_sha256"],
+            destination=Path(item["destination"]),
+            expected_source_sha256=item["source_sha256"],
+            expected_candidate_sha256=item["candidate_sha256"],
         )
-        item.update(result)
-        if _non_target_file_hashes(Path(item["source"]).parent) != item[
-            "non_target_files_before"
-        ]:
+        expected_files = {
+            **item["files_before"],
+            CORRECTED_CLEANED_PLY: item["candidate_sha256"],
+        }
+        if _file_hashes(Path(item["source"]).parent) != expected_files:
             raise OSError(
-                f"{item['scan_id']} non-target scan-folder file changed"
+                f"{item['scan_id']} scan-folder write boundary violated"
             )
-        item["non_target_files_unchanged"] = True
+        item.update(result)
+        item["only_corrected_output_added"] = True
         _write_journal(report_path, journal)
-        print(f"replaced {item['scan_id']}", flush=True)
+        print(f"created {item['scan_id']}", flush=True)
     journal["status"] = "complete"
-    journal["replaced_count"] = len(journal["results"])
+    journal["created_count"] = len(journal["results"])
     _write_journal(report_path, journal)
     print(json.dumps(journal, indent=2), flush=True)
 

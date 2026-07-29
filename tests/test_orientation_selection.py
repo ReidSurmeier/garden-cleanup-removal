@@ -47,3 +47,33 @@ def test_review_orientation_uses_the_visually_chosen_candidate() -> None:
 def test_review_orientation_fails_closed_without_visual_selection() -> None:
     with pytest.raises(ValueError, match="requires a visual selection"):
         select_orientation(_fused("needs_review"))
+
+
+def test_review_can_preserve_the_existing_orientation_as_identity() -> None:
+    result = select_orientation(
+        _fused("needs_review"),
+        visual_selection={
+            "candidate": "identity",
+            "reviewer": "client-visual-review",
+            "reason": "before orientation is better than every correction",
+        },
+    )
+
+    assert result["status"] == "selected"
+    assert result["up"] == [0.0, 0.0, 1.0]
+    assert result["selection_basis"] == "visual_identity_review"
+    assert result["visual_selection"]["candidate"] == "identity"
+
+
+def test_client_identity_review_overrides_an_automatic_rotation() -> None:
+    result = select_orientation(
+        _fused("automatic"),
+        visual_selection={
+            "candidate": "identity",
+            "reviewer": "client-visual-review",
+            "reason": "before orientation is visibly correct",
+        },
+    )
+
+    assert result["up"] == [0.0, 0.0, 1.0]
+    assert result["selection_basis"] == "visual_identity_review"

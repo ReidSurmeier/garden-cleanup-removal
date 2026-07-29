@@ -24,6 +24,27 @@ def select_orientation(
     if not isinstance(consensus, dict):
         raise ValueError("fused orientation lacks consensus")
     status = consensus.get("status")
+    if (
+        isinstance(visual_selection, dict)
+        and visual_selection.get("candidate") == "identity"
+    ):
+        reviewer = str(visual_selection.get("reviewer", "")).strip()
+        reason = str(visual_selection.get("reason", "")).strip()
+        if not reviewer or not reason:
+            raise ValueError("visual selection requires reviewer and reason")
+        return {
+            "schema_version": 1,
+            "scan_id": str(fused["scan_id"]),
+            "status": "selected",
+            "up": [0.0, 0.0, 1.0],
+            "selection_basis": "visual_identity_review",
+            "visual_selection": {
+                **visual_selection,
+                "candidate": "identity",
+                "reviewer": reviewer,
+                "reason": reason,
+            },
+        }
     if status == "automatic":
         return {
             "schema_version": 1,
@@ -37,7 +58,12 @@ def select_orientation(
         raise ValueError(f"unsupported consensus status: {status!r}")
     if not isinstance(visual_selection, dict):
         raise ValueError("review orientation requires a visual selection")
-    candidate_number = int(visual_selection.get("candidate", 0))
+    reviewer = str(visual_selection.get("reviewer", "")).strip()
+    reason = str(visual_selection.get("reason", "")).strip()
+    if not reviewer or not reason:
+        raise ValueError("visual selection requires reviewer and reason")
+    candidate_value = visual_selection.get("candidate", 0)
+    candidate_number = int(candidate_value)
     candidates = consensus.get("ranked_candidates")
     if (
         not isinstance(candidates, list)
@@ -45,10 +71,6 @@ def select_orientation(
         or candidate_number > len(candidates)
     ):
         raise ValueError("visual selection candidate is out of range")
-    reviewer = str(visual_selection.get("reviewer", "")).strip()
-    reason = str(visual_selection.get("reason", "")).strip()
-    if not reviewer or not reason:
-        raise ValueError("visual selection requires reviewer and reason")
     return {
         "schema_version": 1,
         "scan_id": str(fused["scan_id"]),
