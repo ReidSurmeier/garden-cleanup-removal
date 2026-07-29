@@ -12,6 +12,11 @@ from mathutils import Matrix, Vector
 import numpy as np
 
 
+PRODUCTION_BLEND_FILENAME = (
+    "plant-cleaned-garden-ec2fbd1-final-v2-orientation-review-v1.blend"
+)
+
+
 def _arguments() -> argparse.Namespace:
     values = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
@@ -19,6 +24,8 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--maximum-points", type=int, default=80_000)
     parser.add_argument("--size", type=int, default=1200)
+    parser.add_argument("--start-index", type=int, default=0)
+    parser.add_argument("--maximum-scans", type=int)
     return parser.parse_args(values)
 
 
@@ -345,7 +352,49 @@ def _evaluate_scan(
             }
         )
     scan_output = output_root / item["scan_id"]
-    blend_path = scan_output / "orientation-evaluation.blend"
+    identity_matrix = matrices.get("identity")
+    if identity_matrix is None:
+        raise ValueError("Blender review requires an identity candidate")
+    cloud.name = "Plant Point Cloud — identity (current)"
+    cloud.matrix_world = Matrix(identity_matrix.tolist())
+    cloud["orientation_candidate"] = "identity"
+    cloud["selection_status"] = "current_unmodified_orientation"
+    alternatives = bpy.data.collections.new(
+        "Orientation Candidates (hidden)"
+    )
+    bpy.context.scene.collection.children.link(alternatives)
+    for candidate, result in zip(candidates, results, strict=True):
+        identifier = str(candidate["candidate"])
+        if identifier == "identity":
+            continue
+        alternative = cloud.copy()
+        alternative.data = cloud.data
+        alternative.name = f"Plant Point Cloud — candidate {identifier}"
+        alternative.matrix_world = Matrix(matrices[identifier].tolist())
+        alternative.hide_render = True
+        alternative.hide_viewport = True
+        alternative["orientation_candidate"] = identifier
+        alternative["rotation_degrees"] = result["rotation_degrees"]
+        alternative["selection_basis"] = str(candidate["selection_basis"])
+        alternatives.objects.link(alternative)
+    scene = bpy.context.scene
+    scene["orientation_review_status"] = "unselected"
+    scene["source_ply"] = str(source)
+    scene["default_visible_candidate"] = "identity"
+    configured_blend = item.get("blend_output")
+    if configured_blend is None:
+        blend_path = scan_output / "orientation-evaluation.blend"
+    else:
+        blend_path = Path(configured_blend).resolve()
+        if (
+            blend_path.parent != source.parent
+            or blend_path.name != PRODUCTION_BLEND_FILENAME
+        ):
+            raise ValueError(
+                f"unsafe production Blender destination: {blend_path}"
+            )
+    if blend_path.exists():
+        raise FileExistsError(f"refusing to overwrite Blender file: {blend_path}")
     bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
     report = {
         "schema_version": 1,
@@ -378,25 +427,54 @@ def main() -> None:
     if output_root.exists():
         raise FileExistsError(f"output root already exists: {output_root}")
     output_root.mkdir(parents=True)
+    if args.start_index < 0:
+        raise ValueError("start index cannot be negative")
+    if args.maximum_scans is not None and args.maximum_scans < 1:
+        raise ValueError("maximum scans must be positive")
+    all_scans = manifest["scans"]
+    stop = (
+        None
+        if args.maximum_scans is None
+        else args.start_index + args.maximum_scans
+    )
+    scans = all_scans[args.start_index:stop]
     reports = []
-    for index, item in enumerate(manifest["scans"], start=1):
+    failures = []
+    for index, item in enumerate(scans, start=1):
         print(
-            f"[BLENDER-ORIENTATION] {index}/{len(manifest['scans'])} "
+            f"[BLENDER-ORIENTATION] {index}/{len(scans)} "
             f"{item['scan_id']}",
             flush=True,
         )
-        reports.append(
-            _evaluate_scan(
-                item,
-                output_root,
-                args.maximum_points,
-                args.size,
+        try:
+            reports.append(
+                _evaluate_scan(
+                    item,
+                    output_root,
+                    args.maximum_points,
+                    args.size,
+                )
             )
-        )
+        except Exception as error:
+            failures.append(
+                {
+                    "scan_id": item["scan_id"],
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            )
+            print(
+                f"[BLENDER-ORIENTATION] FAILED {item['scan_id']}: "
+                f"{type(error).__name__}: {error}",
+                flush=True,
+            )
     batch = {
         "schema_version": 1,
         "manifest": str(args.manifest.resolve()),
         "source_files_opened_read_only": True,
+        "start_index": args.start_index,
+        "requested_scan_count": len(scans),
+        "completed_scan_count": len(reports),
+        "failed_scan_count": len(failures),
         "reports": [
             {
                 "scan_id": report["scan_id"],
@@ -406,6 +484,7 @@ def main() -> None:
             }
             for report in reports
         ],
+        "failures": failures,
     }
     with (output_root / "batch-report.json").open("x", encoding="utf-8") as destination:
         json.dump(batch, destination, indent=2, sort_keys=True)
