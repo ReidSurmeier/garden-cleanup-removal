@@ -76,6 +76,19 @@ def main() -> None:
         candidate_limit = (
             1 if fused["consensus"]["status"] == "automatic" else 3
         )
+        if fused["consensus"]["status"] == "automatic":
+            candidates = [
+                {
+                    **candidates[0],
+                    "cluster_consensus_up": candidates[0][
+                        "consensus_up"
+                    ],
+                    "consensus_up": fused["consensus"]["selected_up"],
+                    "selection_basis": fused["consensus"][
+                        "selection_basis"
+                    ],
+                }
+            ]
         candidate_reports: list[dict[str, Any]] = []
         for candidate_index, candidate in enumerate(
             candidates[:candidate_limit],

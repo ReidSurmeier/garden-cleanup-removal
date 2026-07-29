@@ -90,3 +90,20 @@ def test_competing_three_family_hypotheses_require_visual_review() -> None:
     assert result["reason"] == "competing_consensus_hypotheses"
     assert result["ranked_candidates"][0]["family_count"] == 3
     assert result["ranked_candidates"][1]["family_count"] == 3
+
+
+def test_validated_ground_is_the_rotation_anchor_not_an_averaged_vector() -> None:
+    ground = np.array((0.0, -0.258819, 0.965926))
+    result = resolve_orientation_consensus(
+        [
+            _evidence("ground", tuple(ground)),
+            _evidence("camera", (0.0, 0.0, 1.0)),
+            _evidence("photo", (0.0, -0.241922, 0.970296)),
+            _evidence("vertical", (0.0, -0.275637, 0.961262)),
+        ]
+    )
+
+    assert result["status"] == "automatic"
+    assert result["selection_basis"] == "validated_ground_anchor"
+    np.testing.assert_allclose(result["selected_up"], ground, atol=1e-6)
+    assert not np.allclose(result["consensus_up"], ground)

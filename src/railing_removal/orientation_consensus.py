@@ -151,6 +151,27 @@ def resolve_orientation_consensus(
     automatic = enough_families and not competing_consensus
     all_families = sorted({item.family for item in items})
     supporting = list(winner["families"])
+    winner_up = np.asarray(winner["consensus_up"], dtype=np.float64)
+    validated_ground = sorted(
+        (
+            item
+            for item in items
+            if item.family == "ground"
+            and _angle_degrees(item.up, winner_up)
+            <= maximum_agreement_degrees
+        ),
+        key=lambda item: -item.confidence,
+    )
+    if automatic and validated_ground:
+        selected_up = validated_ground[0].up.tolist()
+        selection_basis = "validated_ground_anchor"
+    else:
+        selected_up = list(winner["consensus_up"])
+        selection_basis = (
+            "weighted_family_consensus"
+            if automatic
+            else "ranked_review_hypothesis"
+        )
     return {
         "schema_version": 1,
         "status": "automatic" if automatic else "needs_review",
@@ -164,6 +185,8 @@ def resolve_orientation_consensus(
             )
         ),
         "consensus_up": list(winner["consensus_up"]),
+        "selected_up": selected_up,
+        "selection_basis": selection_basis,
         "supporting_families": supporting,
         "rejected_families": sorted(set(all_families) - set(supporting)),
         "ranked_candidates": candidates,
