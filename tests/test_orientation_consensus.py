@@ -107,3 +107,18 @@ def test_validated_ground_is_the_rotation_anchor_not_an_averaged_vector() -> Non
     assert result["selection_basis"] == "validated_ground_anchor"
     np.testing.assert_allclose(result["selected_up"], ground, atol=1e-6)
     assert not np.allclose(result["consensus_up"], ground)
+
+
+def test_sloped_ground_is_not_gravity_without_a_vertical_structure_vote() -> None:
+    ground = np.array((0.0, -0.258819, 0.965926))
+    result = resolve_orientation_consensus(
+        [
+            _evidence("ground", tuple(ground)),
+            _evidence("camera", (0.0, 0.0, 1.0)),
+            _evidence("photo", (0.0, -0.104528, 0.994522)),
+        ]
+    )
+
+    assert result["status"] == "automatic"
+    assert result["selection_basis"] == "weighted_family_consensus"
+    assert not np.allclose(result["selected_up"], ground)

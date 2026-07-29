@@ -162,7 +162,7 @@ def resolve_orientation_consensus(
         ),
         key=lambda item: -item.confidence,
     )
-    if automatic and validated_ground:
+    if automatic and validated_ground and "vertical" in supporting:
         selected_up = validated_ground[0].up.tolist()
         selection_basis = "validated_ground_anchor"
     else:
