@@ -11,10 +11,7 @@ import Metashape
 from railing_removal.camera_inventory_batch import (
     run_camera_inventory_batch,
 )
-
-
-def _vector(value: object | None) -> list[float] | None:
-    return [float(item) for item in value] if value is not None else None
+from railing_removal.metashape_inventory import build_camera_inventory
 
 
 def _inventory_project(project: Path) -> dict[str, Any]:
@@ -24,64 +21,12 @@ def _inventory_project(project: Path) -> dict[str, Any]:
         if not bool(document.read_only):
             raise RuntimeError("Metashape did not open the project read-only")
         chunk = document.chunks[0]
-        cameras = []
-        for camera in chunk.cameras:
-            calibration = (
-                camera.sensor.calibration
-                if camera.sensor is not None
-                else None
-            )
-            cameras.append(
-                {
-                    "label": str(camera.label),
-                    "enabled": bool(camera.enabled),
-                    "aligned": camera.transform is not None,
-                    "photo": (
-                        str(camera.photo.path)
-                        if camera.photo is not None
-                        else None
-                    ),
-                    "center": _vector(camera.center),
-                    "transform": _vector(camera.transform),
-                    "calibration": (
-                        {
-                            "width": int(calibration.width),
-                            "height": int(calibration.height),
-                            "f": float(calibration.f),
-                            "cx": float(calibration.cx),
-                            "cy": float(calibration.cy),
-                            "b1": float(calibration.b1),
-                            "b2": float(calibration.b2),
-                            "k1": float(calibration.k1),
-                            "k2": float(calibration.k2),
-                            "k3": float(calibration.k3),
-                            "k4": float(calibration.k4),
-                            "p1": float(calibration.p1),
-                            "p2": float(calibration.p2),
-                        }
-                        if calibration is not None
-                        else None
-                    ),
-                }
-            )
-        return {
-            "schema_version": 1,
-            "metashape_version": str(Metashape.version),
-            "project": str(project),
-            "project_opened_read_only": True,
-            "chunk": str(chunk.label),
-            "point_count": (
-                int(chunk.point_cloud.point_count)
-                if chunk.point_cloud is not None
-                else 0
-            ),
-            "camera_count": len(cameras),
-            "aligned_camera_count": sum(
-                camera["aligned"] for camera in cameras
-            ),
-            "depth_map_count": len(chunk.depth_maps.keys()),
-            "cameras": cameras,
-        }
+        return build_camera_inventory(
+            chunk,
+            project=project,
+            metashape_version=str(Metashape.version),
+            project_opened_read_only=bool(document.read_only),
+        )
     finally:
         del document
         gc.collect()
