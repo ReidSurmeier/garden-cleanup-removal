@@ -173,6 +173,7 @@ def estimate_rigid_axes_from_cloud(
     reference_up: np.ndarray | None = None,
     maximum_sample_points: int = 60_000,
     neighbors: int = 20,
+    maximum_vertical_surface_normal_dot: float = 0.75,
     random_seed: int = 0,
 ) -> dict[str, Any]:
     """Sample neutral rigid surfaces and estimate their repeated 3D axes."""
@@ -187,11 +188,23 @@ def estimate_rigid_axes_from_cloud(
         or colors.shape != coordinates.shape
     ):
         raise ValueError("cloud coordinates, normals, and colors must be Nx3")
+    if not 0 < maximum_vertical_surface_normal_dot < 1:
+        raise ValueError("vertical surface normal dot must be in (0, 1)")
+    normal_lengths = np.linalg.norm(normals, axis=1)
     valid = (
         np.isfinite(coordinates).all(axis=1)
         & np.isfinite(normals).all(axis=1)
-        & (np.linalg.norm(normals, axis=1) > 0.5)
+        & (normal_lengths > 0.5)
     )
+    if reference_up is not None:
+        reference = np.asarray(reference_up, dtype=np.float64)
+        reference /= np.linalg.norm(reference)
+        normal_up_dot = np.zeros(len(normals), dtype=np.float64)
+        normal_up_dot[valid] = np.abs(
+            (normals[valid] / normal_lengths[valid, None]) @ reference
+        )
+        valid &= normal_up_dot <= maximum_vertical_surface_normal_dot
+    vertical_surface_point_count = int(np.count_nonzero(valid))
     scaled_colors = colors / 255.0
     chroma = np.max(scaled_colors, axis=1) - np.min(
         scaled_colors,
@@ -220,6 +233,7 @@ def estimate_rigid_axes_from_cloud(
             "schema_version": 1,
             "status": "insufficient_evidence",
             "selection_basis": selection_basis,
+            "vertical_surface_point_count": vertical_surface_point_count,
             "sample_point_count": int(len(candidates)),
             "candidates": [],
         }
@@ -248,5 +262,6 @@ def estimate_rigid_axes_from_cloud(
         **result,
         "selection_basis": selection_basis,
         "source_point_count": int(len(coordinates)),
+        "vertical_surface_point_count": vertical_surface_point_count,
         "sample_point_count": int(len(candidates)),
     }
