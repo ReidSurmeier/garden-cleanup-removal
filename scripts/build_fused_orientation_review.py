@@ -16,6 +16,9 @@ from railing_removal.normalization import (  # noqa: E402
     _rotation_between,
     write_normalized_cloud,
 )
+from railing_removal.orientation_selection import (  # noqa: E402
+    orientation_review_candidates,
+)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -72,31 +75,12 @@ def main() -> None:
             size=1800,
             point_radius=1,
         )
-        candidates = fused["consensus"]["ranked_candidates"]
-        candidate_limit = (
-            1 if fused["consensus"]["status"] == "automatic" else 3
-        )
-        if fused["consensus"]["status"] == "automatic":
-            candidates = [
-                {
-                    **candidates[0],
-                    "cluster_consensus_up": candidates[0][
-                        "consensus_up"
-                    ],
-                    "consensus_up": fused["consensus"]["selected_up"],
-                    "selection_basis": fused["consensus"][
-                        "selection_basis"
-                    ],
-                }
-            ]
         candidate_reports: list[dict[str, Any]] = []
-        for candidate_index, candidate in enumerate(
-            candidates[:candidate_limit],
-            start=1,
-        ):
-            candidate_dir = review_dir / f"candidate-{candidate_index}"
+        for candidate in orientation_review_candidates(fused):
+            candidate_id = candidate["candidate"]
+            candidate_dir = review_dir / f"candidate-{candidate_id}"
             normalized = candidate_dir / "plant-candidate.ply"
-            transform = _matrix(candidate["consensus_up"])
+            transform = _matrix(candidate["up"])
             layer = write_normalized_cloud(
                 cleaned,
                 normalized,
@@ -110,7 +94,7 @@ def main() -> None:
             )
             candidate_reports.append(
                 {
-                    "candidate": candidate_index,
+                    "candidate": candidate_id,
                     "matrix": transform.tolist(),
                     "hypothesis": candidate,
                     "layer": layer,

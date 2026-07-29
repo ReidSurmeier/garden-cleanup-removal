@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from railing_removal.orientation_selection import select_orientation
+from railing_removal.orientation_selection import (
+    orientation_review_candidates,
+    select_orientation,
+)
 
 
 def _fused(status: str) -> dict[str, object]:
@@ -77,3 +80,15 @@ def test_client_identity_review_overrides_an_automatic_rotation() -> None:
 
     assert result["up"] == [0.0, 0.0, 1.0]
     assert result["selection_basis"] == "visual_identity_review"
+
+
+def test_every_visual_review_includes_the_existing_orientation() -> None:
+    candidates = orientation_review_candidates(_fused("automatic"))
+
+    assert candidates[0] == {
+        "candidate": "identity",
+        "up": [0.0, 0.0, 1.0],
+        "selection_basis": "preserve_existing_orientation",
+    }
+    assert candidates[1]["candidate"] == 1
+    assert candidates[1]["up"] == [0.0, 0.0, 1.0]

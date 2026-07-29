@@ -15,6 +15,51 @@ def _up(value: object) -> list[float]:
     return (vector / length).tolist()
 
 
+def orientation_review_candidates(
+    fused: dict[str, Any],
+    *,
+    maximum_ranked_candidates: int = 3,
+) -> list[dict[str, Any]]:
+    """Return comparable hypotheses, always including the current frame."""
+
+    consensus = fused.get("consensus")
+    if not isinstance(consensus, dict):
+        raise ValueError("fused orientation lacks consensus")
+    if maximum_ranked_candidates < 1:
+        raise ValueError("maximum_ranked_candidates must be positive")
+    candidates: list[dict[str, Any]] = [
+        {
+            "candidate": "identity",
+            "up": [0.0, 0.0, 1.0],
+            "selection_basis": "preserve_existing_orientation",
+        }
+    ]
+    if consensus.get("status") == "automatic":
+        candidates.append(
+            {
+                "candidate": 1,
+                "up": _up(consensus["selected_up"]),
+                "selection_basis": str(consensus["selection_basis"]),
+            }
+        )
+        return candidates
+    ranked = consensus.get("ranked_candidates")
+    if not isinstance(ranked, list):
+        raise ValueError("fused orientation lacks ranked candidates")
+    for index, item in enumerate(
+        ranked[:maximum_ranked_candidates],
+        start=1,
+    ):
+        candidates.append(
+            {
+                "candidate": index,
+                "up": _up(item["consensus_up"]),
+                "selection_basis": "ranked_review_hypothesis",
+            }
+        )
+    return candidates
+
+
 def select_orientation(
     fused: dict[str, Any],
     *,
