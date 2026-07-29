@@ -63,6 +63,7 @@ def _material(
     color: tuple[float, float, float, float],
     *,
     emission_strength: float = 0.0,
+    color_attribute: str | None = None,
 ) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
     material.diffuse_color = color
@@ -73,6 +74,17 @@ def _material(
     if emission_strength:
         principled.inputs["Emission Color"].default_value = color
         principled.inputs["Emission Strength"].default_value = emission_strength
+    if color_attribute:
+        attribute = material.node_tree.nodes.new("ShaderNodeAttribute")
+        attribute.attribute_name = color_attribute
+        material.node_tree.links.new(
+            attribute.outputs["Color"],
+            principled.inputs["Base Color"],
+        )
+        material.node_tree.links.new(
+            attribute.outputs["Color"],
+            principled.inputs["Emission Color"],
+        )
     return material
 
 
@@ -180,11 +192,22 @@ def _sample_mesh(target: bpy.types.Object, maximum_points: int) -> np.ndarray:
         return coordinates
     indices = np.linspace(0, count - 1, maximum_points).round().astype(np.int64)
     sampled = coordinates[indices]
+    colors = None
+    color_attribute = target.data.attributes.get("Col")
+    if color_attribute is not None:
+        raw_colors = np.empty(count * 4, dtype=np.float32)
+        color_attribute.data.foreach_get("color", raw_colors)
+        colors = raw_colors.reshape((-1, 4))[indices]
     mesh = bpy.data.meshes.new("Deterministic Point Sample")
     mesh.from_pydata(sampled.tolist(), [], [])
-    original = target.data
+    if colors is not None:
+        sampled_colors = mesh.attributes.new(
+            name="Col",
+            type="FLOAT_COLOR",
+            domain="POINT",
+        )
+        sampled_colors.data.foreach_set("color", colors.ravel())
     target.data = mesh
-    bpy.data.meshes.remove(original)
     return sampled
 
 
@@ -268,6 +291,7 @@ def _evaluate_scan(
         "Plant",
         (0.3, 0.74, 0.24, 1.0),
         emission_strength=0.18,
+        color_attribute="Col",
     )
     _point_renderer(
         cloud,
