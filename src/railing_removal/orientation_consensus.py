@@ -141,7 +141,14 @@ def resolve_orientation_consensus(
     )
 
     winner = candidates[0]
-    automatic = int(winner["family_count"]) >= minimum_automatic_families
+    enough_families = (
+        int(winner["family_count"]) >= minimum_automatic_families
+    )
+    competing_consensus = any(
+        int(candidate["family_count"]) >= int(winner["family_count"])
+        for candidate in candidates[1:]
+    )
+    automatic = enough_families and not competing_consensus
     all_families = sorted({item.family for item in items})
     supporting = list(winner["families"])
     return {
@@ -150,7 +157,11 @@ def resolve_orientation_consensus(
         "reason": (
             "independent_family_consensus"
             if automatic
-            else "insufficient_independent_family_agreement"
+            else (
+                "competing_consensus_hypotheses"
+                if enough_families and competing_consensus
+                else "insufficient_independent_family_agreement"
+            )
         ),
         "consensus_up": list(winner["consensus_up"]),
         "supporting_families": supporting,

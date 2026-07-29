@@ -72,3 +72,21 @@ def test_two_against_two_is_ranked_but_never_automatic() -> None:
     assert len(result["ranked_candidates"]) == 2
     assert result["ranked_candidates"][0]["family_count"] == 2
     assert result["ranked_candidates"][1]["family_count"] == 2
+
+
+def test_competing_three_family_hypotheses_require_visual_review() -> None:
+    result = resolve_orientation_consensus(
+        [
+            _evidence("ground", (0.0, 0.0, 1.0)),
+            _evidence("ground", (0.0, 1.0, 0.0)),
+            _evidence("vertical", (0.0, 0.0, 1.0)),
+            _evidence("vertical", (0.0, 1.0, 0.0)),
+            _evidence("camera", (0.0, 0.0, 1.0)),
+            _evidence("photo", (0.0, 1.0, 0.0)),
+        ]
+    )
+
+    assert result["status"] == "needs_review"
+    assert result["reason"] == "competing_consensus_hypotheses"
+    assert result["ranked_candidates"][0]["family_count"] == 3
+    assert result["ranked_candidates"][1]["family_count"] == 3
