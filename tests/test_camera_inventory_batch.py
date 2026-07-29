@@ -108,3 +108,33 @@ def test_camera_inventory_batch_preserves_partial_directory(
         "failed": 0,
     }
     assert evidence.read_text(encoding="utf-8") == "keep me"
+
+
+def test_camera_inventory_batch_accepts_windows_utf8_bom(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "one.psx"
+    project.write_text("immutable source", encoding="utf-8")
+    manifest = tmp_path / "projects.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "projects": [
+                    {"scan_id": "scan-1", "project": str(project)}
+                ],
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+
+    report = run_camera_inventory_batch(
+        manifest,
+        tmp_path / "output",
+        inventory_project=lambda path: {
+            "project": str(path),
+            "project_opened_read_only": True,
+        },
+    )
+
+    assert report["summary"]["complete"] == 1

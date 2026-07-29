@@ -10,7 +10,7 @@ Progress = Callable[[str], None]
 
 
 def _load_projects(path: Path) -> list[dict[str, Path | str]]:
-    value = json.loads(path.resolve().read_text(encoding="utf-8"))
+    value = json.loads(path.resolve().read_text(encoding="utf-8-sig"))
     if value.get("schema_version") != 1:
         raise ValueError("project manifest schema_version must be 1")
     projects = value.get("projects")
