@@ -28,6 +28,8 @@ PyTorch
 
 Pillow
 
+OpenCV
+
 pytest
 
 uv

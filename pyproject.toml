@@ -11,6 +11,7 @@ dependencies = ["numpy>=2.0", "pillow>=11.0", "plyfile>=1.1", "scipy>=1.15"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 reference = ["imageio-ffmpeg>=0.6"]
+orientation = ["opencv-python-headless>=4.12"]
 vision = [
   "torch>=2.7",
   "torchvision>=0.22",

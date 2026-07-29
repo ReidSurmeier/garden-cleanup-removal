@@ -26,6 +26,9 @@ def _camera_record(camera: Any, coordinate_frame: dict[str, Any]) -> dict[str, A
     transform = getattr(camera, "transform", None)
     source_frame_center = None
     source_frame_up = None
+    source_frame_right = None
+    source_frame_down = None
+    source_frame_forward = None
     if transform is not None:
         matrix = list(transform)
         source_frame_center = list(
@@ -34,6 +37,27 @@ def _camera_record(camera: Any, coordinate_frame: dict[str, Any]) -> dict[str, A
         source_frame_up = list(
             _reframe(
                 (-matrix[1], -matrix[5], -matrix[9]),
+                coordinate_frame,
+                normalize=True,
+            )
+        )
+        source_frame_right = list(
+            _reframe(
+                (matrix[0], matrix[4], matrix[8]),
+                coordinate_frame,
+                normalize=True,
+            )
+        )
+        source_frame_down = list(
+            _reframe(
+                (matrix[1], matrix[5], matrix[9]),
+                coordinate_frame,
+                normalize=True,
+            )
+        )
+        source_frame_forward = list(
+            _reframe(
+                (matrix[2], matrix[6], matrix[10]),
                 coordinate_frame,
                 normalize=True,
             )
@@ -52,6 +76,9 @@ def _camera_record(camera: Any, coordinate_frame: dict[str, Any]) -> dict[str, A
         "transform": _vector(transform),
         "source_frame_center": source_frame_center,
         "source_frame_up": source_frame_up,
+        "source_frame_right": source_frame_right,
+        "source_frame_down": source_frame_down,
+        "source_frame_forward": source_frame_forward,
         "reference": (
             {
                 "enabled": bool(getattr(reference, "enabled", False)),
@@ -116,7 +143,7 @@ def build_camera_inventory(
     transform = getattr(chunk, "transform", None)
     crs = getattr(chunk, "crs", None)
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "metashape_version": str(metashape_version),
         "project": str(project),
         "project_opened_read_only": True,

@@ -72,3 +72,15 @@ def test_inventory_records_camera_and_metric_evidence_in_source_frame() -> None:
         report["cameras"][0]["source_frame_up"],
         (0.0, 0.0, 1.0),
     )
+    np.testing.assert_allclose(
+        report["cameras"][0]["source_frame_right"],
+        (1.0, 0.0, 0.0),
+    )
+    np.testing.assert_allclose(
+        report["cameras"][0]["source_frame_down"],
+        (0.0, 0.0, -1.0),
+    )
+    np.testing.assert_allclose(
+        report["cameras"][0]["source_frame_forward"],
+        (0.0, 1.0, 0.0),
+    )
