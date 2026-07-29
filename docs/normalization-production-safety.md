@@ -53,9 +53,16 @@ The cleanup source path is read-only:
 
 `F:\3d_scans\scans\2026\202607_sf\<scan-directory>\plant-cleaned-garden-ec2fbd1-final-v2.ply`
 
-The only permanent path the normalizer may create is:
+The normalizer may create these two exact, versioned permanent paths:
 
 `F:\3d_scans\scans\2026\202607_sf\<scan-directory>\plant-cleaned-garden-ec2fbd1-final-v2-orientation-corrected-v1.ply`
+
+`F:\3d_scans\scans\2026\202607_sf\<scan-directory>\plant-cleaned-garden-ec2fbd1-final-v2-orientation-review-v1.blend`
+
+The Blender review file is an inspection scene authorized on July 29. It is
+created only when the exact cleanup PLY exists. The producer refuses to
+overwrite an existing review file and keeps screenshots, reports, manifests,
+and temporary work under `F:\3d_scans\_normalization_work`.
 
 The July 29 read-only preflight found 251 scan directories and 237 existing
 files with that exact generated-cleanup filename. Missing generated outputs are
@@ -99,7 +106,7 @@ The production updater must not write, rename, move, or delete:
 - original or intermediate point clouds;
 - `plant-cleaned-garden-ec2fbd1-final-v2.ply`;
 - scan directories;
-- any existing PLY;
+- any existing PLY or Blender file;
 - any file outside the production root.
 
 Review screenshots and reports remain outside the production scan tree. They

@@ -23,3 +23,8 @@ normalization is created beside it as
 `F:\3d_scans\scans\2026\202607_sf`. The writer refuses to overwrite either
 file. It does not modify source photos, videos, Metashape projects, cleanup
 outputs, or the existing scan directory structure.
+
+The separately gated Blender review may create one non-overwriting inspection
+scene beside an eligible cleanup output:
+`plant-cleaned-garden-ec2fbd1-final-v2-orientation-review-v1.blend`. It embeds
+review geometry but never changes the input PLY or any Metashape data.
