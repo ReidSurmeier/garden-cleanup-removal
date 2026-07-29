@@ -4,6 +4,8 @@ from typing import Any
 
 import numpy as np
 
+_DUPLICATE_ORIENTATION_TOLERANCE_DEGREES = 0.1
+
 
 def _up(value: object) -> list[float]:
     vector = np.asarray(value, dtype=np.float64)
@@ -13,6 +15,21 @@ def _up(value: object) -> list[float]:
     if length < 1e-12:
         raise ValueError("selected orientation cannot be zero")
     return (vector / length).tolist()
+
+
+def _duplicates_existing_orientation(
+    up: list[float],
+    candidates: list[dict[str, Any]],
+) -> bool:
+    cosine_threshold = float(
+        np.cos(np.deg2rad(_DUPLICATE_ORIENTATION_TOLERANCE_DEGREES))
+    )
+    vector = np.asarray(up, dtype=np.float64)
+    return any(
+        float(np.dot(vector, np.asarray(candidate["up"], dtype=np.float64)))
+        >= cosine_threshold
+        for candidate in candidates
+    )
 
 
 def orientation_review_candidates(
@@ -35,13 +52,15 @@ def orientation_review_candidates(
         }
     ]
     if consensus.get("status") == "automatic":
-        candidates.append(
-            {
-                "candidate": 1,
-                "up": _up(consensus["selected_up"]),
-                "selection_basis": str(consensus["selection_basis"]),
-            }
-        )
+        selected_up = _up(consensus["selected_up"])
+        if not _duplicates_existing_orientation(selected_up, candidates):
+            candidates.append(
+                {
+                    "candidate": 1,
+                    "up": selected_up,
+                    "selection_basis": str(consensus["selection_basis"]),
+                }
+            )
         return candidates
     ranked = consensus.get("ranked_candidates")
     if not isinstance(ranked, list):
@@ -50,13 +69,15 @@ def orientation_review_candidates(
         ranked[:maximum_ranked_candidates],
         start=1,
     ):
-        candidates.append(
-            {
-                "candidate": index,
-                "up": _up(item["consensus_up"]),
-                "selection_basis": "ranked_review_hypothesis",
-            }
-        )
+        candidate_up = _up(item["consensus_up"])
+        if not _duplicates_existing_orientation(candidate_up, candidates):
+            candidates.append(
+                {
+                    "candidate": index,
+                    "up": candidate_up,
+                    "selection_basis": "ranked_review_hypothesis",
+                }
+            )
     return candidates
 
 

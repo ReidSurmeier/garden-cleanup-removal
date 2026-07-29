@@ -85,10 +85,17 @@ def test_client_identity_review_overrides_an_automatic_rotation() -> None:
 def test_every_visual_review_includes_the_existing_orientation() -> None:
     candidates = orientation_review_candidates(_fused("automatic"))
 
-    assert candidates[0] == {
+    assert candidates == [{
         "candidate": "identity",
         "up": [0.0, 0.0, 1.0],
         "selection_basis": "preserve_existing_orientation",
-    }
-    assert candidates[1]["candidate"] == 1
-    assert candidates[1]["up"] == [0.0, 0.0, 1.0]
+    }]
+
+
+def test_visual_review_keeps_a_small_non_identity_correction() -> None:
+    fused = _fused("automatic")
+    fused["consensus"]["selected_up"] = [0.0, 0.0324, 0.9995]
+
+    candidates = orientation_review_candidates(fused)
+
+    assert [item["candidate"] for item in candidates] == ["identity", 1]
