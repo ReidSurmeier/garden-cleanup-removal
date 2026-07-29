@@ -48,6 +48,46 @@ def _fit_plane(points: np.ndarray) -> tuple[np.ndarray, float, np.ndarray]:
     return normal, offset, eigenvalues
 
 
+def _recorded_support_plane(
+    report: dict[str, Any],
+    *,
+    minimum_candidate_points: int,
+) -> tuple[np.ndarray, float, dict[str, Any]]:
+    if report.get("strategy") != "median_low_support_normals":
+        raise ValueError("support plane does not contain a measured normal")
+    coefficients = np.asarray(report.get("coefficients"), dtype=np.float64)
+    recorded_normal = np.asarray(report.get("normal"), dtype=np.float64)
+    if coefficients.shape != (3,) or recorded_normal.shape != (3,):
+        raise ValueError("support plane must contain 3D coefficients and normal")
+    if not np.all(np.isfinite(coefficients)) or not np.all(
+        np.isfinite(recorded_normal)
+    ):
+        raise ValueError("support plane evidence must be finite")
+    normal_candidate_points = int(report.get("normal_candidate_points", 0))
+    offset_candidate_points = int(report.get("offset_candidate_points", 0))
+    if (
+        normal_candidate_points < minimum_candidate_points
+        or offset_candidate_points < minimum_candidate_points
+    ):
+        raise ValueError("support plane has too few measured candidate points")
+
+    a, b, c = coefficients
+    coefficient_normal = _normalized(np.array((-a, -b, 1.0)))
+    recorded_normal = _normalized(recorded_normal)
+    if float(coefficient_normal @ recorded_normal) < 1.0 - 1e-5:
+        raise ValueError("support plane normal conflicts with its coefficients")
+    ground_offset = -float(c * coefficient_normal[2])
+    return (
+        coefficient_normal,
+        ground_offset,
+        {
+            "strategy": str(report["strategy"]),
+            "normal_candidate_points": normal_candidate_points,
+            "offset_candidate_points": offset_candidate_points,
+        },
+    )
+
+
 def _rotation_between(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     source = _normalized(source)
     target = _normalized(target)
@@ -250,6 +290,7 @@ def normalize_cleanup_layers(
     ground_mask: np.ndarray,
     camera_inventory: dict[str, Any],
     output_dir: Path,
+    support_plane: dict[str, Any] | None = None,
     parameters: NormalizationParameters = NormalizationParameters(),
 ) -> dict[str, Any]:
     source_path = source_path.resolve()
@@ -272,6 +313,7 @@ def normalize_cleanup_layers(
         ground_mask=ground_mask,
         camera_centers=camera_centers,
         camera_up_vectors=camera_up_vectors,
+        support_plane=support_plane,
         parameters=parameters,
     )
     output_dir.mkdir(parents=True)
@@ -308,6 +350,7 @@ def estimate_normalization_plan(
     ground_mask: np.ndarray,
     camera_centers: np.ndarray,
     camera_up_vectors: np.ndarray,
+    support_plane: dict[str, Any] | None = None,
     parameters: NormalizationParameters = NormalizationParameters(),
 ) -> dict[str, Any]:
     coordinates = np.asarray(coordinates, dtype=np.float64)
@@ -335,7 +378,19 @@ def estimate_normalization_plan(
             f"{parameters.minimum_aligned_cameras} aligned cameras"
         )
 
-    ground_normal, ground_offset, eigenvalues = _fit_plane(ground)
+    fitted_normal, fitted_offset, eigenvalues = _fit_plane(ground)
+    support_plane_report = None
+    if support_plane is not None:
+        ground_normal, ground_offset, support_plane_report = (
+            _recorded_support_plane(
+                support_plane,
+                minimum_candidate_points=parameters.minimum_ground_points,
+            )
+        )
+        orientation_basis = "cleanup_support_plane_report"
+    else:
+        ground_normal, ground_offset = fitted_normal, fitted_offset
+        orientation_basis = "cleanup_ground_plane"
     normalized_camera_up = np.vstack(
         [_normalized(vector) for vector in camera_up_vectors]
     )
@@ -386,10 +441,15 @@ def estimate_normalization_plan(
         1.0 - eigenvalues[0] / max(float(eigenvalues.sum()), 1e-12)
     )
     strong_ground_evidence = planarity >= 0.99
-    automatic = strong_ground_evidence or (
-        disagreement <= parameters.maximum_up_disagreement_degrees
-        and planarity >= 0.9
-    )
+    if support_plane_report is not None:
+        automatic = (
+            disagreement <= parameters.maximum_up_disagreement_degrees
+        )
+    else:
+        automatic = strong_ground_evidence or (
+            disagreement <= parameters.maximum_up_disagreement_degrees
+            and planarity >= 0.9
+        )
     automatic &= scale_resolved
     return {
         "schema_version": 1,
@@ -399,13 +459,14 @@ def estimate_normalization_plan(
         "scale": scale,
         "translation": matrix[:3, 3].tolist(),
         "evidence": {
-            "orientation_basis": "cleanup_ground_plane",
+            "orientation_basis": orientation_basis,
             "ground": {
                 "candidate_point_count": int(len(ground)),
                 "normal": ground_normal.tolist(),
                 "offset": ground_offset,
                 "planarity": planarity,
                 "normal_sign_basis": normal_sign_basis,
+                "recorded_support_plane": support_plane_report,
             },
             "cameras": {
                 "aligned_camera_count": int(len(camera_centers)),

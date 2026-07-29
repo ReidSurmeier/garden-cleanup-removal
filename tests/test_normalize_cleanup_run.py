@@ -40,7 +40,7 @@ def test_cleanup_run_normalization_uses_ground_decisions_and_preserves_source(
     points = np.zeros(130, dtype=VERTEX_DTYPE)
     points["x"] = np.linspace(-3.0, 3.0, len(points))
     points["y"] = np.tile(np.linspace(-2.0, 2.0, 13), 10)
-    points["z"] = 0.4 * points["y"] - 2.0
+    points["z"] = 0.3 * points["y"] - 2.0
     points["z"][100:] += 2.0
     points["nz"] = 1.0
     points["red"] = 25
@@ -55,8 +55,22 @@ def test_cleanup_run_normalization_uses_ground_decisions_and_preserves_source(
     decisions = np.ones(len(points), dtype=np.uint8)
     decisions[:100] = 2
     np.save(final / "decision-codes.npy", decisions)
+    (final / "semantic-report.json").write_text(
+        json.dumps(
+            {
+                "support_plane": {
+                    "coefficients": [0.0, 0.3, -2.0],
+                    "normal": [0.0, -0.2873478856, 0.9578262852],
+                    "normal_candidate_points": 100,
+                    "offset_candidate_points": 100,
+                    "strategy": "median_low_support_normals",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    normal = np.array((0.0, -0.4, 1.0), dtype=np.float64)
+    normal = np.array((0.0, -0.3, 1.0), dtype=np.float64)
     normal /= np.linalg.norm(normal)
     ground = np.column_stack(
         (points["x"][:100], points["y"][:100], points["z"][:100])
@@ -93,8 +107,14 @@ def test_cleanup_run_normalization_uses_ground_decisions_and_preserves_source(
     assert report["ground_evidence"] == {
         "decision_code": 2,
         "point_count": 100,
+        "support_plane_report": str(
+            (final / "semantic-report.json").resolve()
+        ),
     }
     assert report["plan"]["status"] == "automatic"
+    assert report["plan"]["evidence"]["orientation_basis"] == (
+        "cleanup_support_plane_report"
+    )
     assert set(report["layers"]) == {
         "source",
         "plant",

@@ -37,6 +37,14 @@ def main() -> None:
         inventory = json.loads(
             Path(item["camera_inventory"]).read_text(encoding="utf-8")
         )
+        semantic_report = json.loads(
+            Path(item["semantic_report"]).read_text(encoding="utf-8")
+        )
+        support_plane = semantic_report.get("support_plane")
+        if not isinstance(support_plane, dict):
+            raise ValueError(
+                f"{item['scan_id']} lacks measured support-plane evidence"
+            )
         centers, up_vectors, _ = camera_evidence_from_inventory(inventory)
         coordinates = np.column_stack(
             (source["x"], source["y"], source["z"])
@@ -47,6 +55,7 @@ def main() -> None:
                 ground_mask=decisions == 2,
                 camera_centers=centers,
                 camera_up_vectors=up_vectors,
+                support_plane=support_plane,
             )
             results.append(
                 {
@@ -59,6 +68,9 @@ def main() -> None:
                         "planarity"
                     ],
                     "ground_normal": plan["evidence"]["ground"]["normal"],
+                    "orientation_basis": plan["evidence"][
+                        "orientation_basis"
+                    ],
                     "camera_count": plan["evidence"]["cameras"][
                         "aligned_camera_count"
                     ],

@@ -38,6 +38,7 @@ def normalize_cleanup_run(
     output_dir = output_dir.resolve()
     final_dir = cleanup_run / "final"
     decision_path = final_dir / "decision-codes.npy"
+    semantic_report_path = final_dir / "semantic-report.json"
     layers = {
         "plant": final_dir / "plant-cleaned-color-corrected.ply",
         "conservative": final_dir / "plant-cleaned-conservative.ply",
@@ -48,6 +49,7 @@ def normalize_cleanup_run(
         source_path,
         camera_inventory_path,
         decision_path,
+        semantic_report_path,
         *layers.values(),
     ]
     missing = [str(path) for path in required if not path.is_file()]
@@ -66,12 +68,21 @@ def normalize_cleanup_run(
     inventory = json.loads(
         camera_inventory_path.read_text(encoding="utf-8")
     )
+    semantic_report = json.loads(
+        semantic_report_path.read_text(encoding="utf-8")
+    )
+    support_plane = semantic_report.get("support_plane")
+    if not isinstance(support_plane, dict):
+        raise ValueError(
+            "cleanup semantic report lacks measured support-plane evidence"
+        )
     normalization = normalize_cleanup_layers(
         source_path,
         layers,
         ground_mask=ground_mask,
         camera_inventory=inventory,
         output_dir=output_dir,
+        support_plane=support_plane,
         parameters=parameters,
     )
     report = {
@@ -84,6 +95,7 @@ def normalize_cleanup_run(
         "ground_evidence": {
             "decision_code": 2,
             "point_count": int(ground_mask.sum()),
+            "support_plane_report": str(semantic_report_path),
         },
     }
     report_path = output_dir / "cleanup-normalization-report.json"

@@ -109,6 +109,97 @@ def test_coherent_cleanup_ground_overrides_tilted_camera_view_axis() -> None:
     assert np.max(np.abs(normalized_ground[:, 2])) < 1e-6
 
 
+def test_recorded_support_plane_overrides_contaminated_rejected_support() -> None:
+    xs, ys = np.meshgrid(
+        np.linspace(-5.0, 5.0, 21),
+        np.linspace(-4.0, 4.0, 17),
+    )
+    floor = np.column_stack((xs.ravel(), ys.ravel(), np.zeros(xs.size)))
+    railing = np.column_stack(
+        (
+            np.linspace(-5.0, 5.0, 180),
+            np.zeros(180),
+            np.linspace(0.0, 8.0, 180),
+        )
+    )
+    plant = np.column_stack(
+        (
+            np.zeros(40),
+            np.ones(40),
+            np.linspace(0.1, 5.0, 40),
+        )
+    )
+    coordinates = np.vstack((floor, railing, plant))
+    rejected_support = np.zeros(len(coordinates), dtype=bool)
+    rejected_support[: len(floor) + len(railing)] = True
+    camera_centers = np.array(
+        (
+            (-3.0, -3.0, 2.0),
+            (0.0, -4.0, 2.0),
+            (3.0, -3.0, 2.0),
+        )
+    )
+
+    plan = estimate_normalization_plan(
+        coordinates,
+        ground_mask=rejected_support,
+        camera_centers=camera_centers,
+        camera_up_vectors=np.tile((0.0, 0.0, 1.0), (3, 1)),
+        support_plane={
+            "coefficients": [0.0, 0.0, 0.0],
+            "normal": [0.0, 0.0, 1.0],
+            "normal_candidate_points": len(floor),
+            "offset_candidate_points": len(floor),
+            "strategy": "median_low_support_normals",
+        },
+    )
+
+    normalized_floor = apply_similarity_transform(floor, plan["matrix"])
+    assert plan["status"] == "automatic"
+    assert plan["evidence"]["orientation_basis"] == (
+        "cleanup_support_plane_report"
+    )
+    assert np.max(np.abs(normalized_floor[:, 2])) < 1e-6
+    np.testing.assert_allclose(
+        plan["evidence"]["ground"]["normal"],
+        (0.0, 0.0, 1.0),
+    )
+
+
+def test_recorded_support_plane_disagreement_requires_review() -> None:
+    xs, ys = np.meshgrid(
+        np.linspace(-5.0, 5.0, 21),
+        np.linspace(-4.0, 4.0, 17),
+    )
+    floor = np.column_stack((xs.ravel(), ys.ravel(), np.zeros(xs.size)))
+    tilted_normal = np.array((0.0, -0.5, 1.0), dtype=np.float64)
+    tilted_normal /= np.linalg.norm(tilted_normal)
+    camera_centers = np.array(
+        (
+            (-3.0, -3.0, 2.0),
+            (0.0, -4.0, 2.0),
+            (3.0, -3.0, 2.0),
+        )
+    )
+
+    plan = estimate_normalization_plan(
+        floor,
+        ground_mask=np.ones(len(floor), dtype=bool),
+        camera_centers=camera_centers,
+        camera_up_vectors=np.tile((0.0, 0.0, 1.0), (3, 1)),
+        support_plane={
+            "coefficients": [0.0, 0.5, 0.0],
+            "normal": tilted_normal.tolist(),
+            "normal_candidate_points": len(floor),
+            "offset_candidate_points": len(floor),
+            "strategy": "median_low_support_normals",
+        },
+    )
+
+    assert plan["evidence"]["cameras"]["up_disagreement_degrees"] > 20.0
+    assert plan["status"] == "needs_review"
+
+
 def test_camera_positions_resolve_ground_side_when_view_axis_is_inverted() -> None:
     xs, ys = np.meshgrid(
         np.linspace(-3.0, 3.0, 17),
