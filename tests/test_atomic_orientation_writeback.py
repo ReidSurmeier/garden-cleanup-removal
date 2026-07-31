@@ -7,7 +7,7 @@ import pytest
 
 from railing_removal.atomic_orientation_writeback import (
     CORRECTED_CLEANED_PLY,
-    replace_cleaned_ply_atomically,
+    restore_cleaned_ply_from_verified_backup_atomically,
     write_corrected_ply_atomically,
 )
 
@@ -16,7 +16,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_atomic_writeback_preserves_original_backup_and_other_files(
+def test_recovery_restores_verified_backup_and_preserves_other_files(
     tmp_path: Path,
 ) -> None:
     scan_dir = tmp_path / "scan"
@@ -29,22 +29,23 @@ def test_atomic_writeback_preserves_original_backup_and_other_files(
     candidate.write_bytes(b"normalized-cleaned-ply")
     backup = tmp_path / "backup" / source.name
 
-    report = replace_cleaned_ply_atomically(
-        source=source,
-        candidate=candidate,
-        backup=backup,
-        expected_source_sha256=_sha256(source),
-        expected_candidate_sha256=_sha256(candidate),
+    report = restore_cleaned_ply_from_verified_backup_atomically(
+        installed=source,
+        verified_backup=candidate,
+        archive=backup,
+        expected_installed_sha256=_sha256(source),
+        expected_backup_sha256=_sha256(candidate),
     )
 
     assert source.read_bytes() == b"normalized-cleaned-ply"
     assert backup.read_bytes() == b"original-cleaned-ply"
     assert sentinel.read_bytes() == b"must-not-change"
-    assert report["status"] == "replaced"
-    assert report["backup_sha256"] != report["installed_sha256"]
+    assert report["status"] == "restored"
+    assert report["protected_cleanup_restored"] is True
+    assert report["archive_sha256"] != report["restored_sha256"]
 
 
-def test_atomic_writeback_fails_before_writing_if_source_drifted(
+def test_recovery_fails_before_writing_if_installed_file_drifted(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "plant-cleaned-garden-ec2fbd1-final-v2.ply"
@@ -53,20 +54,20 @@ def test_atomic_writeback_fails_before_writing_if_source_drifted(
     candidate.write_bytes(b"normalized")
     backup = tmp_path / "backup" / source.name
 
-    with pytest.raises(ValueError, match="source hash changed"):
-        replace_cleaned_ply_atomically(
-            source=source,
-            candidate=candidate,
-            backup=backup,
-            expected_source_sha256=hashlib.sha256(b"original").hexdigest(),
-            expected_candidate_sha256=_sha256(candidate),
+    with pytest.raises(ValueError, match="installed file hash changed"):
+        restore_cleaned_ply_from_verified_backup_atomically(
+            installed=source,
+            verified_backup=candidate,
+            archive=backup,
+            expected_installed_sha256=hashlib.sha256(b"original").hexdigest(),
+            expected_backup_sha256=_sha256(candidate),
         )
 
     assert source.read_bytes() == b"changed"
     assert not backup.exists()
 
 
-def test_atomic_writeback_refuses_any_other_source_filename(
+def test_recovery_refuses_any_other_source_filename(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "raw-source.ply"
@@ -75,12 +76,12 @@ def test_atomic_writeback_refuses_any_other_source_filename(
     candidate.write_bytes(b"candidate")
 
     with pytest.raises(ValueError, match="protected cleaned PLY filename"):
-        replace_cleaned_ply_atomically(
-            source=source,
-            candidate=candidate,
-            backup=tmp_path / "backup.ply",
-            expected_source_sha256=_sha256(source),
-            expected_candidate_sha256=_sha256(candidate),
+        restore_cleaned_ply_from_verified_backup_atomically(
+            installed=source,
+            verified_backup=candidate,
+            archive=tmp_path / "backup.ply",
+            expected_installed_sha256=_sha256(source),
+            expected_backup_sha256=_sha256(candidate),
         )
 
 

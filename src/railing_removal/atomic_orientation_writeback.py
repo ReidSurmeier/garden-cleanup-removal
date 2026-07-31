@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
-
 
 PROTECTED_CLEANED_PLY = "plant-cleaned-garden-ec2fbd1-final-v2.ply"
 CORRECTED_CLEANED_PLY = (
@@ -22,66 +21,74 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def replace_cleaned_ply_atomically(
+def restore_cleaned_ply_from_verified_backup_atomically(
     *,
-    source: Path,
-    candidate: Path,
-    backup: Path,
-    expected_source_sha256: str,
-    expected_candidate_sha256: str,
+    installed: Path,
+    verified_backup: Path,
+    archive: Path,
+    expected_installed_sha256: str,
+    expected_backup_sha256: str,
 ) -> dict[str, Any]:
-    """Install one verified orientation while retaining an external backup."""
+    """Restore a verified backup and archive the superseded installed file."""
 
-    source = source.resolve()
-    candidate = candidate.resolve()
-    backup = backup.resolve()
-    if source.name != PROTECTED_CLEANED_PLY:
-        raise ValueError("source is not the protected cleaned PLY filename")
-    if source == candidate or source == backup or candidate == backup:
-        raise ValueError("source, candidate, and backup must be distinct")
-    if backup.parent == source.parent:
-        raise ValueError("backup must remain outside the scan folder")
-    if not source.is_file() or not candidate.is_file():
-        raise FileNotFoundError("source and candidate must both exist")
-    if backup.exists():
-        raise FileExistsError(f"backup already exists: {backup}")
+    installed = installed.resolve()
+    verified_backup = verified_backup.resolve()
+    archive = archive.resolve()
+    if installed.name != PROTECTED_CLEANED_PLY:
+        raise ValueError("installed file is not the protected cleaned PLY filename")
+    if (
+        installed == verified_backup
+        or installed == archive
+        or verified_backup == archive
+    ):
+        raise ValueError(
+            "installed file, verified backup, and archive must be distinct"
+        )
+    if archive.parent == installed.parent:
+        raise ValueError("archive must remain outside the scan folder")
+    if not installed.is_file() or not verified_backup.is_file():
+        raise FileNotFoundError(
+            "installed file and verified backup must both exist"
+        )
+    if archive.exists():
+        raise FileExistsError(f"archive already exists: {archive}")
 
-    source_sha256 = _sha256(source)
-    if source_sha256 != expected_source_sha256:
-        raise ValueError("source hash changed since candidate generation")
-    candidate_sha256 = _sha256(candidate)
-    if candidate_sha256 != expected_candidate_sha256:
-        raise ValueError("candidate hash changed since verification")
+    installed_sha256 = _sha256(installed)
+    if installed_sha256 != expected_installed_sha256:
+        raise ValueError("installed file hash changed since recovery planning")
+    backup_sha256 = _sha256(verified_backup)
+    if backup_sha256 != expected_backup_sha256:
+        raise ValueError("verified backup hash changed since recovery planning")
 
-    backup.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, backup)
-    backup_sha256 = _sha256(backup)
-    if backup_sha256 != source_sha256:
-        raise OSError("backup verification failed")
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(installed, archive)
+    archive_sha256 = _sha256(archive)
+    if archive_sha256 != installed_sha256:
+        raise OSError("archive verification failed")
 
-    temporary = source.with_name(
-        f".{source.name}.orientation-{uuid4().hex}.partial"
+    temporary = installed.with_name(
+        f".{installed.name}.recovery-{uuid4().hex}.partial"
     )
     try:
-        shutil.copy2(candidate, temporary)
-        if _sha256(temporary) != candidate_sha256:
-            raise OSError("same-volume candidate copy verification failed")
-        os.replace(temporary, source)
+        shutil.copy2(verified_backup, temporary)
+        if _sha256(temporary) != backup_sha256:
+            raise OSError("same-volume backup copy verification failed")
+        os.replace(temporary, installed)
     finally:
         temporary.unlink(missing_ok=True)
-    installed_sha256 = _sha256(source)
-    if installed_sha256 != candidate_sha256:
-        raise OSError("installed candidate verification failed")
+    restored_sha256 = _sha256(installed)
+    if restored_sha256 != backup_sha256:
+        raise OSError("restored backup verification failed")
     return {
         "schema_version": 1,
-        "status": "replaced",
-        "source": str(source),
-        "backup": str(backup),
-        "candidate": str(candidate),
-        "original_sha256": source_sha256,
-        "backup_sha256": backup_sha256,
-        "installed_sha256": installed_sha256,
-        "only_protected_cleaned_ply_replaced": True,
+        "status": "restored",
+        "installed": str(installed),
+        "verified_backup": str(verified_backup),
+        "archive": str(archive),
+        "installed_before_restore_sha256": installed_sha256,
+        "archive_sha256": archive_sha256,
+        "restored_sha256": restored_sha256,
+        "protected_cleanup_restored": True,
     }
 
 

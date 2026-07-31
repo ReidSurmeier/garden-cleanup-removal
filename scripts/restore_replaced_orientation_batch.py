@@ -8,13 +8,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-
 REPOSITORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY / "src"))
 
 from railing_removal.atomic_orientation_writeback import (  # noqa: E402
     PROTECTED_CLEANED_PLY,
-    replace_cleaned_ply_atomically,
+    restore_cleaned_ply_from_verified_backup_atomically,
 )
 
 
@@ -106,12 +105,12 @@ def main() -> None:
     }
     _write_journal(restore_path, journal)
     for item in journal["results"]:
-        result = replace_cleaned_ply_atomically(
-            source=Path(item["source"]),
-            candidate=Path(item["original"]),
-            backup=Path(item["archived_replacement"]),
-            expected_source_sha256=item["installed_sha256"],
-            expected_candidate_sha256=item["original_sha256"],
+        result = restore_cleaned_ply_from_verified_backup_atomically(
+            installed=Path(item["source"]),
+            verified_backup=Path(item["original"]),
+            archive=Path(item["archived_replacement"]),
+            expected_installed_sha256=item["installed_sha256"],
+            expected_backup_sha256=item["original_sha256"],
         )
         if _sha256(Path(item["source"])) != item["original_sha256"]:
             raise OSError(f"{item['scan_id']} original was not restored")
