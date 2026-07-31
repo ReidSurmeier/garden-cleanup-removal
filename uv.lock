@@ -208,6 +208,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "opencv-python-headless" },
     { name = "pytest" },
 ]
 orientation = [
@@ -226,6 +227,7 @@ vision = [
 requires-dist = [
     { name = "imageio-ffmpeg", marker = "extra == 'reference'", specifier = ">=0.6" },
     { name = "numpy", specifier = ">=2.0" },
+    { name = "opencv-python-headless", marker = "extra == 'dev'", specifier = ">=4.12" },
     { name = "opencv-python-headless", marker = "extra == 'orientation'", specifier = ">=4.12" },
     { name = "pillow", specifier = ">=11.0" },
     { name = "plyfile", specifier = ">=1.1" },
